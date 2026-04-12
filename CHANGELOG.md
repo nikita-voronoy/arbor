@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.2](https://github.com/nikita-voronoy/arbor/compare/arbor-v0.1.1...arbor-v0.1.2) (2026-04-12)
+
+
+### Features
+
+* add C# language support ([#4](https://github.com/nikita-voronoy/arbor/issues/4)) ([88bf269](https://github.com/nikita-voronoy/arbor/commit/88bf26925ec529493ce0151f38d645ac041412bf))
+* arbor — code navigation MCP server ([666b388](https://github.com/nikita-voronoy/arbor/commit/666b3881db63e871e9a84fcc0541c01df88ae8dc))
+
 ## [0.1.1](https://github.com/nikita-voronoy/arbor/compare/arbor-v0.1.0...arbor-v0.1.1) (2026-04-12)
 
 
