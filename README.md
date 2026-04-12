@@ -83,18 +83,34 @@ arbor /path/to/project --compact
 
 ## How It Works
 
-```
- Source files           Symbol graph          LLM context
-┌──────────────┐       ┌──────────────┐      ┌────────────┐
-│ .rs .py .ts  │       │  functions   │      │ boot ~150t │
-│ .go .c .cpp  ├──────▶│  structs     ├─────▶│ compact    │
-│ .tf .yml .sql│ parse │  traits      │ MCP  │ search     │
-└──────────────┘       │  edges       │tools │ references │
-                       └──────┬───────┘      │ impact     │
-                              │              └────────────┘
-                              ▼
-                       .arbor/index.bin
-                        (incremental)
+```mermaid
+flowchart LR
+    subgraph Source["Source files"]
+        direction TB
+        S1[".rs .py .ts"]
+        S2[".go .c .cpp .cs"]
+        S3[".tf .yml .sql"]
+    end
+
+    subgraph Graph["Symbol graph"]
+        direction TB
+        G1["functions"]
+        G2["structs + traits"]
+        G3["call edges"]
+    end
+
+    subgraph Tools["MCP tools"]
+        direction TB
+        T1["boot ~150t"]
+        T2["compact"]
+        T3["search"]
+        T4["references"]
+        T5["impact"]
+    end
+
+    Source -- "tree-sitter<br>parse" --> Graph
+    Graph -- "query" --> Tools
+    Graph -- "persist" --> DB[".arbor/index.bin<br>(incremental)"]
 ```
 
 1. **Index** — tree-sitter parses every source file into AST nodes. Arbor extracts functions, structs, traits, enums, calls, imports, type references.
@@ -142,33 +158,53 @@ Plus non-code formats:
 
 ## Architecture
 
-```
-crates/
-  arbor-core/       Graph types (Node, Palace, EdgeKind), query engine,
-                    skeleton/boot/compact output formatters
+```mermaid
+graph TB
+    subgraph arbor-mcp["arbor-mcp"]
+        MCP["MCP server<br>(rmcp over stdio)"]
+        CLI["CLI entry point"]
+        H["9 tool handlers"]
+    end
 
-  arbor-detect/     Project facet detection — scans for Cargo.toml,
-                    package.json, go.mod, Makefile, etc.
+    subgraph arbor-analyzers["arbor-analyzers"]
+        TS["tree-sitter<br>9 languages"]
+        IAC["Ansible / Terraform"]
+        SCH["SQL / Protobuf / OpenAPI"]
+        DOC["Markdown"]
+    end
 
-  arbor-analyzers/  tree-sitter parsing for 8 languages + regex-based
-                    analyzers for Ansible, Terraform, SQL, Protobuf, Markdown
+    subgraph arbor-core["arbor-core"]
+        G["Graph<br>(Node, EdgeKind)"]
+        Q["Query engine<br>search / refs / impact"]
+        SK["Skeleton<br>boot / compact"]
+    end
 
-  arbor-persist/    Disk persistence (bincode), incremental file hashing
-                    (xxh3), file watcher (notify + ignore crate)
+    subgraph arbor-persist["arbor-persist"]
+        ST["Store (bincode)"]
+        FH["FileHashes (xxh3)"]
+    end
 
-  arbor-mcp/        MCP server (rmcp over stdio), CLI entry point,
-                    9 tool handlers
+    DET["arbor-detect<br>Facet detection"]
+
+    MCP --> H
+    H --> Q
+    H --> SK
+    arbor-analyzers --> G
+    DET --> arbor-analyzers
+    G --> ST
+    FH --> arbor-analyzers
 ```
 
 ## Performance
 
-Tested on real-world projects (M-series Mac):
+Tested on real-world projects (M-series Mac, parallel parsing with rayon):
 
-| Project | Files | Functions | LOC | Index time | Compact size |
-|---------|------:|----------:|----:|:----------:|:------------:|
-| arbor (itself) | 57 | 244 | 12k | 0.4s | 141 lines |
-| tokio | 776 | 6,901 | 314k | 2.9s | 623 lines |
-| bevy | 1,756 | 21,863 | 1.1M | 9.5s | 552 lines |
+| Project | Language | Files | Functions | LOC | Index time | Compact |
+|---------|----------|------:|----------:|----:|:----------:|:-------:|
+| arbor | Rust | 57 | 244 | 12k | 0.4s | 141 lines |
+| tokio | Rust | 776 | 6,901 | 314k | 2.9s | 623 lines |
+| bevy | Rust | 1,756 | 21,863 | 1.1M | 9.5s | 552 lines |
+| dotnet/runtime | C# | 37,581 | 522,691 | 28M | 29s | 561 lines |
 
 Incremental re-index (only changed files) is typically <100ms.
 
