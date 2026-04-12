@@ -208,6 +208,17 @@ Tested on real-world projects (M-series Mac, parallel parsing with rayon):
 
 Incremental re-index (only changed files) is typically <100ms.
 
+<details>
+<summary>Token efficiency: MCP vs grep/Read</summary>
+
+Arbor's MCP tools return structured, compressed output — dramatically fewer tokens than raw grep + file reads for the same information.
+
+![Token comparison](docs/bench-tokens.png)
+
+![Bytes breakdown](docs/bench-bytes.png)
+
+</details>
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
