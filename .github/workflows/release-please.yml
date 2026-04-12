@@ -1,4 +1,4 @@
-name: Release Please
+name: Release
 
 on:
   push:
@@ -12,6 +12,7 @@ jobs:
   release-please:
     name: Release Please
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
@@ -22,35 +23,34 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
-  # When a release is created, build binaries and attach to the release
   build:
     name: Build ${{ matrix.target }}
     needs: release-please
     if: ${{ needs.release-please.outputs.release_created }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
-            archive: tar.gz
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
-            archive: tar.gz
             cross: true
           - target: x86_64-apple-darwin
             os: macos-latest
-            archive: tar.gz
           - target: aarch64-apple-darwin
             os: macos-latest
-            archive: tar.gz
           - target: x86_64-pc-windows-msvc
             os: windows-latest
-            archive: zip
 
     env:
       BINARY: arbor
+      # LTO + strip for smaller binaries
+      CARGO_PROFILE_RELEASE_LTO: thin
+      CARGO_PROFILE_RELEASE_STRIP: symbols
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: 1
 
     steps:
       - uses: actions/checkout@v4
@@ -61,28 +61,34 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          key: ${{ matrix.target }}
+          key: release-${{ matrix.target }}
 
-      - name: Install cross
+      # Cross-compile aarch64-linux via cargo-zigbuild (faster than cross, no Docker)
+      - name: Install zigbuild
         if: matrix.cross
-        run: cargo install cross --git https://github.com/cross-rs/cross
+        run: pip3 install cargo-zigbuild
+
+      - name: Install Zig
+        if: matrix.cross
+        uses: mlugg/setup-zig@v2
 
       - name: Build (cross)
         if: matrix.cross
-        run: cross build --release --target ${{ matrix.target }} -p arbor-mcp
+        run: cargo zigbuild --release --target ${{ matrix.target }} -p arbor-mcp
 
       - name: Build (native)
         if: "!matrix.cross"
         run: cargo build --release --target ${{ matrix.target }} -p arbor-mcp
 
+      # Package
       - name: Package (unix)
-        if: matrix.archive == 'tar.gz'
+        if: runner.os != 'Windows'
         run: |
           cd target/${{ matrix.target }}/release
           tar czf ../../../${{ env.BINARY }}-${{ matrix.target }}.tar.gz ${{ env.BINARY }}
 
       - name: Package (windows)
-        if: matrix.archive == 'zip'
+        if: runner.os == 'Windows'
         shell: bash
         run: |
           cd target/${{ matrix.target }}/release
