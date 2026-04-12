@@ -3,6 +3,11 @@ name: CI
 on:
   push:
     branches: [main]
+    paths:
+      - "crates/**"
+      - "tests/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
   pull_request:
     branches: [main]
 
