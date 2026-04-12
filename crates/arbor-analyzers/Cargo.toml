@@ -1,0 +1,25 @@
+[package]
+name = "arbor-analyzers"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+arbor-core = { path = "../arbor-core" }
+arbor-detect = { path = "../arbor-detect" }
+serde = { workspace = true }
+anyhow = { workspace = true }
+petgraph = { workspace = true }
+tree-sitter = "0.25"
+tree-sitter-rust = "0.24"
+tree-sitter-python = "0.25"
+tree-sitter-typescript = "0.23"
+tree-sitter-go = "0.25"
+tree-sitter-c = "0.24"
+tree-sitter-cpp = "0.23"
+serde_yaml = "0.9"
+pulldown-cmark = "0.12"
+regex = "1"
+ignore = "0.4"
+
+[dev-dependencies]
+tempfile = "3.27.0"

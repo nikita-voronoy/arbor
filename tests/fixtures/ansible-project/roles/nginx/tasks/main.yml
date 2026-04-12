@@ -1,0 +1,18 @@
+---
+- name: Install nginx
+  apt:
+    name: nginx
+    state: present
+  notify: restart nginx
+
+- name: Configure nginx
+  template:
+    src: nginx.conf.j2
+    dest: /etc/nginx/sites-available/default
+  notify: reload nginx
+
+- name: Enable nginx site
+  file:
+    src: /etc/nginx/sites-available/default
+    dest: /etc/nginx/sites-enabled/default
+    state: link

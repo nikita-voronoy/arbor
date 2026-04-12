@@ -1,0 +1,14 @@
+[package]
+name = "arbor-persist"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+arbor-core = { path = "../arbor-core" }
+serde = { workspace = true }
+anyhow = { workspace = true }
+bincode = "1"
+xxhash-rust = { version = "0.8", features = ["xxh3"] }
+notify = "7"
+notify-debouncer-mini = "0.5"
+ignore = "0.4"

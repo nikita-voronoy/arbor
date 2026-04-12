@@ -1,0 +1,6 @@
+[webservers]
+web1 ansible_host=10.0.0.1
+web2 ansible_host=10.0.0.2
+
+[dbservers]
+db1 ansible_host=10.0.1.1

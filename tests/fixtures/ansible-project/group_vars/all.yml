@@ -1,0 +1,4 @@
+---
+app_host: app.example.com
+app_port: 8080
+slack_token: "vault_encrypted_token"

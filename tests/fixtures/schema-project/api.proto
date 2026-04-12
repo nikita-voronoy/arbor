@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+package myapp;
+
+message User {
+    int64 id = 1;
+    string name = 2;
+    string email = 3;
+}
+
+message Post {
+    int64 id = 1;
+    string title = 2;
+    string body = 3;
+    int64 author_id = 4;
+}
+
+message GetUserRequest {
+    int64 id = 1;
+}
+
+message ListPostsRequest {
+    int64 author_id = 1;
+    int32 page_size = 2;
+}
+
+service UserService {
+    rpc GetUser(GetUserRequest) returns (User);
+}
+
+service PostService {
+    rpc ListPosts(ListPostsRequest) returns (Post);
+}
