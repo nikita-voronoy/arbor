@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/languages-8-blue?style=flat-square" alt="Languages">
+  <img src="https://img.shields.io/badge/languages-9-blue?style=flat-square" alt="Languages">
   <img src="https://img.shields.io/badge/tree--sitter-powered-green?style=flat-square" alt="tree-sitter">
   <img src="https://img.shields.io/badge/MCP-compatible-purple?style=flat-square" alt="MCP">
   <img src="https://img.shields.io/badge/license-MIT-lightgrey?style=flat-square" alt="License">
@@ -127,6 +127,7 @@ arbor /path/to/project --compact
 | **Go** | ✓ | ��� | — | — | ✓ | ✓ |
 | **C** | ✓ | ✓ | — | ✓ | ✓ | ✓ |
 | **C++** | ✓ | ✓ | — | ✓ | ✓ | ✓ |
+| **C#** | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 Plus non-code formats:
 
