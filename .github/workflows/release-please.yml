@@ -1,19 +1,32 @@
-name: Release
+name: Release Please
 
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
 
 permissions:
   contents: write
-
-env:
-  CARGO_TERM_COLOR: always
-  BINARY: arbor
+  pull-requests: write
 
 jobs:
+  release-please:
+    name: Release Please
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  # When a release is created, build binaries and attach to the release
   build:
     name: Build ${{ matrix.target }}
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -36,6 +49,9 @@ jobs:
             os: windows-latest
             archive: zip
 
+    env:
+      BINARY: arbor
+
     steps:
       - uses: actions/checkout@v4
 
@@ -47,7 +63,6 @@ jobs:
         with:
           key: ${{ matrix.target }}
 
-      # Cross-compile for aarch64-linux
       - name: Install cross
         if: matrix.cross
         run: cargo install cross --git https://github.com/cross-rs/cross
@@ -60,7 +75,6 @@ jobs:
         if: "!matrix.cross"
         run: cargo build --release --target ${{ matrix.target }} -p arbor-mcp
 
-      # Package
       - name: Package (unix)
         if: matrix.archive == 'tar.gz'
         run: |
@@ -74,26 +88,8 @@ jobs:
           cd target/${{ matrix.target }}/release
           7z a ../../../${{ env.BINARY }}-${{ matrix.target }}.zip ${{ env.BINARY }}.exe
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ env.BINARY }}-${{ matrix.target }}
-          path: ${{ env.BINARY }}-${{ matrix.target }}.*
-
-  release:
-    name: Create Release
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-          merge-multiple: true
-
-      - name: Create GitHub Release
+      - name: Upload to release
         uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
-          files: artifacts/*
+          tag_name: ${{ needs.release-please.outputs.tag_name }}
+          files: ${{ env.BINARY }}-${{ matrix.target }}.*
