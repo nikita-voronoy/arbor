@@ -1,7 +1,7 @@
 use anyhow::Result;
 use ignore::WalkBuilder;
 use notify::RecursiveMode;
-use notify_debouncer_mini::{new_debouncer, DebouncedEventKind};
+use notify_debouncer_mini::{DebouncedEventKind, new_debouncer};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::time::Duration;

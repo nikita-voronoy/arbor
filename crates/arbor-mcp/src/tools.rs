@@ -1,16 +1,17 @@
 use arbor_analyzers::AnalyzerRegistry;
 use arbor_core::palace::Palace;
-use parking_lot::Mutex;
+use parking_lot::RwLock;
 use rmcp::{
+    ServerHandler,
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
-    tool, tool_handler, tool_router, ServerHandler,
+    tool, tool_handler, tool_router,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 pub struct ArborServer {
-    palace: Mutex<Palace>,
+    palace: RwLock<Palace>,
     root: PathBuf,
     facets: Vec<String>,
     tool_router: ToolRouter<Self>,
@@ -72,10 +73,10 @@ impl ArborServer {
             // This is needed to pick up newly created files
             let all_files = arbor_persist::watcher::walk_files(&root);
             for path in &all_files {
-                if !current_files.contains(path) {
-                    if let Ok(arbor_persist::hasher::FileStatus::New) = hashes.check_file(path) {
-                        changed_files.push(path.clone());
-                    }
+                if !current_files.contains(path)
+                    && let Ok(arbor_persist::hasher::FileStatus::New) = hashes.check_file(path)
+                {
+                    changed_files.push(path.clone());
                 }
             }
 
@@ -100,7 +101,7 @@ impl ArborServer {
         }
 
         Ok(Self {
-            palace: Mutex::new(palace),
+            palace: RwLock::new(palace),
             root,
             facets: facet_labels,
             tool_router: Self::tool_router(),
@@ -116,17 +117,17 @@ impl ArborServer {
 
     /// CLI helpers (not MCP tools)
     pub fn boot_cli(&self) -> String {
-        let palace = self.palace.lock();
+        let palace = self.palace.read();
         palace.boot(self.project_name(), &self.facets.join("+"))
     }
 
     pub fn skeleton_cli(&self) -> String {
-        let palace = self.palace.lock();
+        let palace = self.palace.read();
         palace.skeleton(None, 3)
     }
 
     pub fn compact_cli(&self) -> String {
-        let palace = self.palace.lock();
+        let palace = self.palace.read();
         palace.compact_skeleton(None, 500, true)
     }
 }
@@ -190,7 +191,7 @@ impl ArborServer {
         description = "Get a compact boot screen overview of the project (~170 tokens): project type, file/function/struct counts, top-level modules, key public types. Call this first."
     )]
     async fn boot(&self) -> String {
-        let palace = self.palace.lock();
+        let palace = self.palace.read();
         palace.boot(self.project_name(), &self.facets.join("+"))
     }
 
@@ -199,7 +200,7 @@ impl ArborServer {
         description = "Get a compact skeleton showing all symbols (functions, structs, traits, enums) organized by file. Optionally filter by path prefix and control depth."
     )]
     async fn skeleton(&self, params: Parameters<SkeletonParams>) -> String {
-        let palace = self.palace.lock();
+        let palace = self.palace.read();
         let depth = params.0.depth.unwrap_or(3);
         match &params.0.path {
             Some(p) => {
@@ -215,7 +216,7 @@ impl ArborServer {
         description = "Get a ultra-compact token-optimized skeleton. Uses abbreviated tags (fn/st/tr/en) and compressed signatures. Best for large codebases where full skeleton is too verbose."
     )]
     async fn compact(&self, params: Parameters<CompactParams>) -> String {
-        let palace = self.palace.lock();
+        let palace = self.palace.read();
         let max_items = params.0.max_items.unwrap_or(500);
         let skip_tests = params.0.skip_tests.unwrap_or(true);
         match &params.0.path {
@@ -232,7 +233,7 @@ impl ArborServer {
         description = "Find all references to a symbol: definitions, calls, imports, type refs, implementations. Returns file locations and reference kinds."
     )]
     async fn references(&self, params: Parameters<SymbolParams>) -> String {
-        let palace = self.palace.lock();
+        let palace = self.palace.read();
         let refs = palace.references(&params.0.symbol);
         if refs.is_empty() {
             return format!("No references found for '{}'", params.0.symbol);
@@ -273,7 +274,7 @@ impl ArborServer {
         description = "Get transitive dependencies of a symbol. Direction 'outgoing' (default) shows what it depends on; 'incoming' shows what depends on it."
     )]
     async fn dependencies(&self, params: Parameters<DependenciesParams>) -> String {
-        let palace = self.palace.lock();
+        let palace = self.palace.read();
 
         // Use primary definition, not every occurrence
         let node_idx = match palace.find_primary(&params.0.symbol) {
@@ -336,7 +337,7 @@ impl ArborServer {
         description = "Impact analysis: find everything that would be affected if the given symbol changes. Shows all transitive dependents."
     )]
     async fn impact(&self, params: Parameters<ImpactParams>) -> String {
-        let palace = self.palace.lock();
+        let palace = self.palace.read();
 
         let node_idx = match palace.find_primary(&params.0.symbol) {
             Some(idx) => idx,
@@ -382,7 +383,7 @@ impl ArborServer {
         description = "Fuzzy search for symbols (functions, structs, traits, enums) by name substring. Results ranked: exact > prefix > contains."
     )]
     async fn search(&self, params: Parameters<SearchParams>) -> String {
-        let palace = self.palace.lock();
+        let palace = self.palace.read();
         let results = palace.search(&params.0.query);
         if results.is_empty() {
             return format!("No symbols matching '{}'", params.0.query);
@@ -426,7 +427,7 @@ impl ArborServer {
         description = "Re-index the project from scratch. Use after significant file changes."
     )]
     async fn reindex(&self) -> String {
-        let mut palace = self.palace.lock();
+        let mut palace = self.palace.write();
         *palace = Palace::new();
         let registry = AnalyzerRegistry::new();
         match registry.analyze_project(&self.root, &mut palace) {
@@ -462,7 +463,7 @@ impl ArborServer {
         description = "Show cross-project tunnels: shared types and symbols that connect different wings (projects) in a multi-project palace."
     )]
     async fn tunnels(&self) -> String {
-        let palace = self.palace.lock();
+        let palace = self.palace.read();
         palace.format_tunnels()
     }
 }

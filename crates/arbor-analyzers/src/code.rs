@@ -327,11 +327,11 @@ impl CodeAnalyzer {
                 if ref_name != "anonymous" {
                     let targets = palace.find_by_name(&ref_name).to_vec();
                     for target_idx in targets {
-                        if let Some(tn) = palace.get_node(target_idx) {
-                            if matches!(tn.kind, NodeKind::Struct) {
-                                palace.add_edge(parent_idx, target_idx, EdgeKind::TypeRef);
-                                break;
-                            }
+                        if let Some(tn) = palace.get_node(target_idx)
+                            && matches!(tn.kind, NodeKind::Struct)
+                        {
+                            palace.add_edge(parent_idx, target_idx, EdgeKind::TypeRef);
+                            break;
                         }
                     }
                 }
@@ -357,11 +357,11 @@ impl CodeAnalyzer {
                 if ref_name != "anonymous" {
                     let targets = palace.find_by_name(&ref_name).to_vec();
                     for target_idx in targets {
-                        if let Some(tn) = palace.get_node(target_idx) {
-                            if matches!(tn.kind, NodeKind::Enum) {
-                                palace.add_edge(parent_idx, target_idx, EdgeKind::TypeRef);
-                                break;
-                            }
+                        if let Some(tn) = palace.get_node(target_idx)
+                            && matches!(tn.kind, NodeKind::Enum)
+                        {
+                            palace.add_edge(parent_idx, target_idx, EdgeKind::TypeRef);
+                            break;
                         }
                     }
                 }
@@ -437,30 +437,30 @@ impl CodeAnalyzer {
         let kind = node.kind();
 
         // C/C++: function_definition → declarator (function_declarator) → declarator (identifier)
-        if kind == "function_definition" {
-            if let Some(declarator) = node.child_by_field_name("declarator") {
-                return self.extract_declarator_name(&declarator, source);
-            }
+        if kind == "function_definition"
+            && let Some(declarator) = node.child_by_field_name("declarator")
+        {
+            return self.extract_declarator_name(&declarator, source);
         }
 
         // C/C++: struct_specifier / class_specifier / enum_specifier → name
-        if kind == "struct_specifier" || kind == "class_specifier" || kind == "enum_specifier" {
-            if let Some(name_node) = node.child_by_field_name("name") {
-                return name_node
-                    .utf8_text(source)
-                    .unwrap_or("anonymous")
-                    .to_string();
-            }
+        if (kind == "struct_specifier" || kind == "class_specifier" || kind == "enum_specifier")
+            && let Some(name_node) = node.child_by_field_name("name")
+        {
+            return name_node
+                .utf8_text(source)
+                .unwrap_or("anonymous")
+                .to_string();
         }
 
         // Python: function_definition / class_definition → name field
-        if kind == "function_definition" || kind == "class_definition" {
-            if let Some(name_node) = node.child_by_field_name("name") {
-                return name_node
-                    .utf8_text(source)
-                    .unwrap_or("anonymous")
-                    .to_string();
-            }
+        if (kind == "function_definition" || kind == "class_definition")
+            && let Some(name_node) = node.child_by_field_name("name")
+        {
+            return name_node
+                .utf8_text(source)
+                .unwrap_or("anonymous")
+                .to_string();
         }
 
         // TS/JS: function_declaration, class_declaration → name field
@@ -499,10 +499,10 @@ impl CodeAnalyzer {
 
         // Fallback: first identifier anywhere in children
         for i in 0..node.child_count() {
-            if let Some(child) = node.child(i) {
-                if child.kind() == "identifier" {
-                    return child.utf8_text(source).unwrap_or("anonymous").to_string();
-                }
+            if let Some(child) = node.child(i)
+                && child.kind() == "identifier"
+            {
+                return child.utf8_text(source).unwrap_or("anonymous").to_string();
             }
         }
 

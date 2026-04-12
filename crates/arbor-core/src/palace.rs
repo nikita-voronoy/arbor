@@ -1,6 +1,7 @@
 use crate::graph::{CodeGraph, EdgeKind, Node, NodeKind};
 use petgraph::stable_graph::NodeIndex;
 use petgraph::visit::{EdgeRef, IntoEdgeReferences};
+use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -42,9 +43,9 @@ pub struct Palace {
     pub rooms: Vec<Room>,
     pub tunnels: Vec<Tunnel>,
     /// Map from file path to the nodes defined in that file
-    pub file_index: HashMap<PathBuf, Vec<NodeIndex>>,
+    pub file_index: FxHashMap<PathBuf, Vec<NodeIndex>>,
     /// Map from symbol name to node indices (for fast lookup)
-    pub name_index: HashMap<String, Vec<NodeIndex>>,
+    pub name_index: FxHashMap<String, Vec<NodeIndex>>,
     /// Pending call edges to resolve after all files are indexed (caller_idx, callee_name)
     #[serde(default)]
     pub pending_calls: Vec<(NodeIndex, String)>,
@@ -57,8 +58,8 @@ impl Palace {
             wings: Vec::new(),
             rooms: Vec::new(),
             tunnels: Vec::new(),
-            file_index: HashMap::new(),
-            name_index: HashMap::new(),
+            file_index: FxHashMap::default(),
+            name_index: FxHashMap::default(),
             pending_calls: Vec::new(),
         }
     }
@@ -109,18 +110,25 @@ impl Palace {
     /// Resolve all pending call edges. Call this after all files have been analyzed.
     pub fn resolve_pending_calls(&mut self) {
         let pending = std::mem::take(&mut self.pending_calls);
+        if pending.is_empty() {
+            return;
+        }
+
+        use rustc_hash::FxHashSet;
+
+        // Pre-collect existing call edges for O(1) dedup
+        let mut added: FxHashSet<(NodeIndex, NodeIndex)> = self
+            .graph
+            .edge_references()
+            .filter(|e| matches!(e.weight(), EdgeKind::Calls))
+            .map(|e| (e.source(), e.target()))
+            .collect();
+
         for (caller_idx, callee_name) in pending {
             let targets: Vec<NodeIndex> = self.find_by_name(&callee_name).to_vec();
             for target in targets {
-                if target != caller_idx {
-                    // Avoid duplicate edges
-                    let already_exists = self
-                        .graph
-                        .edges_directed(caller_idx, petgraph::Direction::Outgoing)
-                        .any(|e| e.target() == target && matches!(e.weight(), EdgeKind::Calls));
-                    if !already_exists {
-                        self.graph.add_edge(caller_idx, target, EdgeKind::Calls);
-                    }
+                if target != caller_idx && added.insert((caller_idx, target)) {
+                    self.graph.add_edge(caller_idx, target, EdgeKind::Calls);
                 }
             }
         }
@@ -129,14 +137,21 @@ impl Palace {
     /// Remove all nodes associated with a file (for incremental re-analysis)
     pub fn remove_file(&mut self, path: &Path) {
         if let Some(indices) = self.file_index.remove(path) {
-            for idx in &indices {
-                if let Some(node) = self.graph.node_weight(*idx) {
-                    let name = node.name.clone();
-                    if let Some(name_entries) = self.name_index.get_mut(&name) {
-                        name_entries.retain(|i| i != idx);
-                        if name_entries.is_empty() {
-                            self.name_index.remove(&name);
-                        }
+            // Collect (idx, name) pairs first to avoid borrow conflict
+            let to_remove: Vec<(NodeIndex, String)> = indices
+                .iter()
+                .filter_map(|&idx| {
+                    self.graph
+                        .node_weight(idx)
+                        .map(|node| (idx, node.name.clone()))
+                })
+                .collect();
+
+            for (idx, name) in &to_remove {
+                if let Some(name_entries) = self.name_index.get_mut(name.as_str()) {
+                    name_entries.retain(|i| i != idx);
+                    if name_entries.is_empty() {
+                        self.name_index.remove(name.as_str());
                     }
                 }
                 self.graph.remove_node(*idx);
@@ -212,55 +227,82 @@ impl Palace {
             return;
         }
 
-        // Phase 1: collect node info (immutable borrow)
-        let wing_nodes: Vec<Vec<(NodeIndex, String, NodeKind)>> = self
+        type WingEntry = (NodeIndex, NodeKind, usize);
+
+        // Phase 1: collect node info per wing, indexed by name for O(N) matching
+        let wing_nodes: Vec<FxHashMap<&str, Vec<WingEntry>>> = self
             .wings
             .iter()
-            .map(|wing| {
-                self.file_index
-                    .iter()
-                    .filter(|(path, _)| path.starts_with(&wing.root))
-                    .flat_map(|(_, indices)| {
-                        indices.iter().filter_map(|&idx| {
-                            self.graph
-                                .node_weight(idx)
-                                .map(|n| (idx, n.name.clone(), n.kind))
-                        })
-                    })
-                    .collect()
+            .enumerate()
+            .map(|(wing_idx, wing)| {
+                let mut by_name: FxHashMap<&str, Vec<WingEntry>> = FxHashMap::default();
+                for (path, indices) in &self.file_index {
+                    if !path.starts_with(&wing.root) {
+                        continue;
+                    }
+                    for &idx in indices {
+                        if let Some(n) = self.graph.node_weight(idx)
+                            && !n.name.is_empty()
+                        {
+                            by_name
+                                .entry(n.name.as_str())
+                                .or_default()
+                                .push((idx, n.kind, wing_idx));
+                        }
+                    }
+                }
+                by_name
             })
             .collect();
 
-        // Phase 2: find matches (no borrows)
+        fn is_tunnel_pair(a: NodeKind, b: NodeKind) -> bool {
+            matches!(
+                (a, b),
+                (NodeKind::Struct, NodeKind::Struct)
+                    | (NodeKind::Trait, NodeKind::Trait)
+                    | (NodeKind::Enum, NodeKind::Enum)
+                    | (NodeKind::Message, NodeKind::Message)
+                    | (NodeKind::Table, NodeKind::Table)
+                    | (NodeKind::Struct, NodeKind::Message)
+                    | (NodeKind::Message, NodeKind::Struct)
+                    | (NodeKind::Struct, NodeKind::Table)
+                    | (NodeKind::Table, NodeKind::Struct)
+            )
+        }
+
+        // Phase 2: intersect by name across wing pairs
         let mut new_tunnels: Vec<Tunnel> = Vec::new();
         let mut new_edges: Vec<(NodeIndex, NodeIndex)> = Vec::new();
 
         for i in 0..wing_nodes.len() {
             for j in (i + 1)..wing_nodes.len() {
-                for (idx_a, name_a, kind_a) in &wing_nodes[i] {
-                    for (idx_b, name_b, kind_b) in &wing_nodes[j] {
-                        if name_a == name_b && !name_a.is_empty() {
-                            let meaningful = matches!(
-                                (kind_a, kind_b),
-                                (NodeKind::Struct, NodeKind::Struct)
-                                    | (NodeKind::Trait, NodeKind::Trait)
-                                    | (NodeKind::Enum, NodeKind::Enum)
-                                    | (NodeKind::Message, NodeKind::Message)
-                                    | (NodeKind::Table, NodeKind::Table)
-                                    | (NodeKind::Struct, NodeKind::Message)
-                                    | (NodeKind::Message, NodeKind::Struct)
-                                    | (NodeKind::Struct, NodeKind::Table)
-                                    | (NodeKind::Table, NodeKind::Struct)
-                            );
-                            if meaningful {
-                                new_tunnels.push(Tunnel {
-                                    from_wing: i,
-                                    to_wing: j,
-                                    from_node: *idx_a,
-                                    to_node: *idx_b,
-                                    reason: format!("shared type: {}", name_a),
-                                });
-                                new_edges.push((*idx_a, *idx_b));
+                // Iterate the smaller map, probe the larger
+                let (smaller, larger) = if wing_nodes[i].len() <= wing_nodes[j].len() {
+                    (&wing_nodes[i], &wing_nodes[j])
+                } else {
+                    (&wing_nodes[j], &wing_nodes[i])
+                };
+
+                for (name, nodes_a) in smaller {
+                    if let Some(nodes_b) = larger.get(name) {
+                        for &(idx_a, kind_a, wing_a) in nodes_a {
+                            for &(idx_b, kind_b, wing_b) in nodes_b {
+                                if is_tunnel_pair(kind_a, kind_b) {
+                                    let (from_wing, to_wing, from_node, to_node) =
+                                        if wing_a < wing_b {
+                                            (wing_a, wing_b, idx_a, idx_b)
+                                        } else {
+                                            (wing_b, wing_a, idx_b, idx_a)
+                                        };
+                                    new_tunnels.push(Tunnel {
+                                        from_wing,
+                                        to_wing,
+                                        from_node,
+                                        to_node,
+                                        reason: format!("shared type: {}", name),
+                                    });
+                                    new_edges.push((from_node, to_node));
+                                }
                             }
                         }
                     }

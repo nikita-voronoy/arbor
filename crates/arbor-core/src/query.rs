@@ -1,9 +1,11 @@
 use crate::graph::{EdgeKind, NodeKind};
 use crate::palace::Palace;
+use petgraph::Direction;
 use petgraph::stable_graph::NodeIndex;
 use petgraph::visit::EdgeRef;
-use petgraph::Direction;
-use std::collections::{HashMap, HashSet, VecDeque};
+use rustc_hash::{FxHashMap, FxHashSet};
+use std::collections::VecDeque;
+use std::path::Path;
 
 /// Result of a references query
 #[derive(Debug)]
@@ -27,7 +29,7 @@ impl Palace {
     /// Only counts the first occurrence per file as Definition, the rest as Other.
     pub fn references(&self, symbol: &str) -> Vec<Reference> {
         let mut results = Vec::new();
-        let mut seen_def_files = HashSet::new();
+        let mut seen_def_files: FxHashSet<&Path> = FxHashSet::default();
 
         // Find definitions — deduplicate by file
         for &idx in self.find_by_name(symbol) {
@@ -45,7 +47,7 @@ impl Palace {
                         | NodeKind::Role
                         | NodeKind::Macro
                 );
-                if is_real_def && seen_def_files.insert(node.file.clone()) {
+                if is_real_def && seen_def_files.insert(&node.file) {
                     results.push(Reference {
                         node: idx,
                         kind: ReferenceKind::Definition,
@@ -55,9 +57,9 @@ impl Palace {
         }
 
         // Find incoming edges to these nodes
-        let def_indices: HashSet<NodeIndex> = self.find_by_name(symbol).iter().copied().collect();
+        let def_indices: FxHashSet<NodeIndex> = self.find_by_name(symbol).iter().copied().collect();
 
-        let mut seen_refs = HashSet::new();
+        let mut seen_refs = FxHashSet::default();
         for &def_idx in &def_indices {
             for edge in self.graph.edges_directed(def_idx, Direction::Incoming) {
                 let source = edge.source();
@@ -93,7 +95,7 @@ impl Palace {
         direction: Direction,
         max_depth: usize,
     ) -> Vec<(NodeIndex, usize)> {
-        let mut visited = HashSet::new();
+        let mut visited = FxHashSet::default();
         let mut queue = VecDeque::new();
         let mut results = Vec::new();
 
@@ -124,16 +126,17 @@ impl Palace {
         let query_lower = query.to_lowercase();
 
         // Collect unique (name, kind) → best NodeIndex
-        let mut seen: HashMap<(String, String), (NodeIndex, usize)> = HashMap::new();
+        let mut seen: FxHashMap<(&str, NodeKind), (NodeIndex, usize)> = FxHashMap::default();
 
         for (name, indices) in &self.name_index {
-            if !name.to_lowercase().contains(&query_lower) {
+            let name_lower = name.to_lowercase();
+            if !name_lower.contains(&query_lower) {
                 continue;
             }
 
             let score = if name == query {
                 0
-            } else if name.to_lowercase().starts_with(&query_lower) {
+            } else if name_lower.starts_with(&query_lower) {
                 1
             } else {
                 2
@@ -146,8 +149,7 @@ impl Palace {
                         continue;
                     }
 
-                    let kind_str = format!("{:?}", node.kind);
-                    let key = (name.clone(), kind_str);
+                    let key = (name.as_str(), node.kind);
 
                     let entry = seen.entry(key).or_insert((idx, score));
                     // Keep the one with best score (or first seen)
