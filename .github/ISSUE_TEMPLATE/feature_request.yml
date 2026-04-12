@@ -1,0 +1,31 @@
+name: Feature Request
+description: Suggest a new feature or improvement
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What problem does this solve? Why do you need it?
+      placeholder: "When working with large monorepos, compact output is still too big because..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      placeholder: "Add a `--max-depth` flag that limits how deep into the directory tree arbor goes."
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Core (graph, queries)
+        - Analyzers (language support)
+        - MCP tools
+        - CLI
+        - Performance
+        - Documentation
+        - Other

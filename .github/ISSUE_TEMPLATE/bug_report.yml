@@ -1,0 +1,51 @@
+name: Bug Report
+description: Something isn't working correctly
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug.
+      placeholder: "arbor crashes when indexing a project with symlinks..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      placeholder: "It should skip symlinks and continue indexing."
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      value: |
+        1. Run `arbor --compact /path/to/project`
+        2. ...
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: OS
+      options:
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Linux (x64)
+        - Linux (arm64)
+        - Windows
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: arbor version
+      placeholder: "v0.1.1 (run: arbor --version)"
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / error output
+      render: shell
