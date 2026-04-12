@@ -18,8 +18,8 @@ impl FileHashes {
 
     /// Hash a file's contents and return whether it changed
     pub fn check_file(&mut self, path: &Path) -> Result<FileStatus> {
-        let contents = std::fs::read(path)
-            .with_context(|| format!("Failed to read {}", path.display()))?;
+        let contents =
+            std::fs::read(path).with_context(|| format!("Failed to read {}", path.display()))?;
         let hash = xxh3_64(&contents);
 
         match self.hashes.get(path) {

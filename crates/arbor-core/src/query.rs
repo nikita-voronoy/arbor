@@ -55,8 +55,7 @@ impl Palace {
         }
 
         // Find incoming edges to these nodes
-        let def_indices: HashSet<NodeIndex> =
-            self.find_by_name(symbol).iter().copied().collect();
+        let def_indices: HashSet<NodeIndex> = self.find_by_name(symbol).iter().copied().collect();
 
         let mut seen_refs = HashSet::new();
         for &def_idx in &def_indices {
@@ -70,10 +69,7 @@ impl Palace {
                         EdgeKind::Implements => ReferenceKind::Implementation,
                         _ => ReferenceKind::Other,
                     };
-                    results.push(Reference {
-                        node: source,
-                        kind,
-                    });
+                    results.push(Reference { node: source, kind });
                 }
             }
         }
@@ -169,25 +165,22 @@ impl Palace {
 
     /// Find the "primary" definition node for a symbol — the first real definition found
     pub fn find_primary(&self, symbol: &str) -> Option<NodeIndex> {
-        self.find_by_name(symbol)
-            .iter()
-            .copied()
-            .find(|&idx| {
-                self.get_node(idx)
-                    .map(|n| {
-                        matches!(
-                            n.kind,
-                            NodeKind::Function
-                                | NodeKind::Struct
-                                | NodeKind::Trait
-                                | NodeKind::Enum
-                                | NodeKind::EnumVariant
-                                | NodeKind::Table
-                                | NodeKind::Message
-                                | NodeKind::Macro
-                        )
-                    })
-                    .unwrap_or(false)
-            })
+        self.find_by_name(symbol).iter().copied().find(|&idx| {
+            self.get_node(idx)
+                .map(|n| {
+                    matches!(
+                        n.kind,
+                        NodeKind::Function
+                            | NodeKind::Struct
+                            | NodeKind::Trait
+                            | NodeKind::Enum
+                            | NodeKind::EnumVariant
+                            | NodeKind::Table
+                            | NodeKind::Message
+                            | NodeKind::Macro
+                    )
+                })
+                .unwrap_or(false)
+        })
     }
 }

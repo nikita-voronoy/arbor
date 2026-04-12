@@ -2,16 +2,36 @@
   "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
   "packages": {
     ".": {
-      "release-type": "rust",
+      "release-type": "simple",
       "package-name": "arbor",
       "bump-minor-pre-major": true,
       "bump-patch-for-minor-pre-major": true,
       "extra-files": [
-        "crates/arbor-core/Cargo.toml",
-        "crates/arbor-detect/Cargo.toml",
-        "crates/arbor-analyzers/Cargo.toml",
-        "crates/arbor-persist/Cargo.toml",
-        "crates/arbor-mcp/Cargo.toml"
+        {
+          "type": "toml",
+          "path": "crates/arbor-core/Cargo.toml",
+          "jsonpath": "$.package.version"
+        },
+        {
+          "type": "toml",
+          "path": "crates/arbor-detect/Cargo.toml",
+          "jsonpath": "$.package.version"
+        },
+        {
+          "type": "toml",
+          "path": "crates/arbor-analyzers/Cargo.toml",
+          "jsonpath": "$.package.version"
+        },
+        {
+          "type": "toml",
+          "path": "crates/arbor-persist/Cargo.toml",
+          "jsonpath": "$.package.version"
+        },
+        {
+          "type": "toml",
+          "path": "crates/arbor-mcp/Cargo.toml",
+          "jsonpath": "$.package.version"
+        }
       ]
     }
   },

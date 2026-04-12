@@ -1,13 +1,12 @@
 use arbor_analyzers::AnalyzerRegistry;
 use arbor_core::palace::Palace;
+use parking_lot::Mutex;
 use rmcp::{
-    ServerHandler,
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
-    tool, tool_handler, tool_router,
+    tool, tool_handler, tool_router, ServerHandler,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use parking_lot::Mutex;
 use std::path::PathBuf;
 
 pub struct ArborServer {
@@ -31,9 +30,10 @@ impl ArborServer {
 
         // Incremental update: check which files changed since last index
         let mut hashes = arbor_persist::hasher::FileHashes::load(&root).unwrap_or_default();
-        let current_files: std::collections::HashSet<PathBuf> = arbor_persist::watcher::walk_files(&root)
-            .into_iter()
-            .collect();
+        let current_files: std::collections::HashSet<PathBuf> =
+            arbor_persist::watcher::walk_files(&root)
+                .into_iter()
+                .collect();
 
         // Remove files that no longer exist
         let tracked: Vec<PathBuf> = hashes.tracked_files().map(|p| p.to_path_buf()).collect();
@@ -237,7 +237,11 @@ impl ArborServer {
             })
             .collect();
 
-        let mut out = format!("References to '{}' ({} found):\n", params.0.symbol, refs.len());
+        let mut out = format!(
+            "References to '{}' ({} found):\n",
+            params.0.symbol,
+            refs.len()
+        );
         for r in &refs {
             if let Some(node) = palace.get_node(r.node) {
                 out.push_str(&format!(
@@ -275,11 +279,21 @@ impl ArborServer {
         };
 
         let node = palace.get_node(node_idx).unwrap();
-        let dir_label = if incoming { "Dependents of" } else { "Dependencies of" };
+        let dir_label = if incoming {
+            "Dependents of"
+        } else {
+            "Dependencies of"
+        };
         // Filter out File nodes
-        let deps: Vec<_> = deps.into_iter().filter(|(idx, _)| {
-            palace.get_node(*idx).map(|n| !matches!(n.kind, arbor_core::graph::NodeKind::File)).unwrap_or(false)
-        }).collect();
+        let deps: Vec<_> = deps
+            .into_iter()
+            .filter(|(idx, _)| {
+                palace
+                    .get_node(*idx)
+                    .map(|n| !matches!(n.kind, arbor_core::graph::NodeKind::File))
+                    .unwrap_or(false)
+            })
+            .collect();
 
         let mut out = format!("{} '{}' ({} found):\n", dir_label, node.name, deps.len());
         for (dep_idx, depth) in &deps {
@@ -294,7 +308,11 @@ impl ArborServer {
                 };
                 out.push_str(&format!(
                     "  [depth {}] {} {} ({}:{})\n",
-                    depth, kind, dep.name, dep.file.display(), dep.span.start_line
+                    depth,
+                    kind,
+                    dep.name,
+                    dep.file.display(),
+                    dep.span.start_line
                 ));
             }
         }
@@ -317,9 +335,15 @@ impl ArborServer {
         let impacts = palace.impact(node_idx, max_depth);
 
         // Filter out File nodes
-        let impacts: Vec<_> = impacts.into_iter().filter(|(idx, _)| {
-            palace.get_node(*idx).map(|n| !matches!(n.kind, arbor_core::graph::NodeKind::File)).unwrap_or(false)
-        }).collect();
+        let impacts: Vec<_> = impacts
+            .into_iter()
+            .filter(|(idx, _)| {
+                palace
+                    .get_node(*idx)
+                    .map(|n| !matches!(n.kind, arbor_core::graph::NodeKind::File))
+                    .unwrap_or(false)
+            })
+            .collect();
 
         let node = palace.get_node(node_idx).unwrap();
         let mut out = format!(
@@ -331,7 +355,10 @@ impl ArborServer {
             if let Some(imp) = palace.get_node(*imp_idx) {
                 out.push_str(&format!(
                     "  [depth {}] {} ({}:{})\n",
-                    depth, imp.name, imp.file.display(), imp.span.start_line
+                    depth,
+                    imp.name,
+                    imp.file.display(),
+                    imp.span.start_line
                 ));
             }
         }
@@ -349,7 +376,11 @@ impl ArborServer {
             return format!("No symbols matching '{}'", params.0.query);
         }
 
-        let mut out = format!("Symbols matching '{}' ({} found):\n", params.0.query, results.len());
+        let mut out = format!(
+            "Symbols matching '{}' ({} found):\n",
+            params.0.query,
+            results.len()
+        );
         for idx in results.iter().take(20) {
             if let Some(node) = palace.get_node(*idx) {
                 let kind = match node.kind {
@@ -365,7 +396,10 @@ impl ArborServer {
                 let sig = node.signature.as_deref().unwrap_or(&node.name);
                 out.push_str(&format!(
                     "  {} {} ({}:{})\n",
-                    kind, sig, node.file.display(), node.span.start_line
+                    kind,
+                    sig,
+                    node.file.display(),
+                    node.span.start_line
                 ));
             }
         }
@@ -395,8 +429,16 @@ impl ArborServer {
                 let stats = palace.stats();
                 format!(
                     "Re-indexed: {} files, {} fn, {} structs, {} enums, {} traits | Facets: {}",
-                    stats.files, stats.functions, stats.structs, stats.enums, stats.traits,
-                    facets.iter().map(|f| f.label()).collect::<Vec<_>>().join("+")
+                    stats.files,
+                    stats.functions,
+                    stats.structs,
+                    stats.enums,
+                    stats.traits,
+                    facets
+                        .iter()
+                        .map(|f| f.label())
+                        .collect::<Vec<_>>()
+                        .join("+")
                 )
             }
             Err(e) => format!("Re-index failed: {}", e),

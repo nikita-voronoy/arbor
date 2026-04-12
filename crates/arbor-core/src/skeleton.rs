@@ -56,15 +56,20 @@ impl Palace {
 
         // Ignored directories for module grouping
         const IGNORED_DIRS: &[&str] = &[
-            "target", "node_modules", ".git", "__pycache__", "vendor", "dist", "build",
+            "target",
+            "node_modules",
+            ".git",
+            "__pycache__",
+            "vendor",
+            "dist",
+            "build",
         ];
         // Transparent directories: skip these when deriving module name
-        const TRANSPARENT_DIRS: &[&str] = &["src", "lib", "pkg", "crates", "packages", "internal", "cmd"];
+        const TRANSPARENT_DIRS: &[&str] =
+            &["src", "lib", "pkg", "crates", "packages", "internal", "cmd"];
 
         for (file_path, indices) in &self.file_index {
-            let rel = file_path
-                .strip_prefix(&common_prefix)
-                .unwrap_or(file_path);
+            let rel = file_path.strip_prefix(&common_prefix).unwrap_or(file_path);
 
             let rel_str = rel.to_string_lossy();
 
@@ -89,7 +94,7 @@ impl Palace {
                 // Flat project: file at root → use filename without extension
                 components
                     .first()
-                    .map(|s| s.rsplit('.').last().unwrap_or(s).to_string())
+                    .map(|s| s.rsplit('.').next_back().unwrap_or(s).to_string())
                     .unwrap_or_else(|| "root".to_string())
             } else {
                 // Find first non-transparent directory
@@ -100,17 +105,18 @@ impl Palace {
                     .cloned()
                     .unwrap_or_else(|| {
                         // All dirs were transparent → use filename
-                        components.last()
-                            .map(|s| s.rsplit('.').last().unwrap_or(s).to_string())
+                        components
+                            .last()
+                            .map(|s| s.rsplit('.').next_back().unwrap_or(s).to_string())
                             .unwrap_or_else(|| "root".to_string())
                     })
             };
 
             // Mark test files
-            let is_test = rel_str.contains("test") || rel_str.contains("spec")
-                || rel_str.contains("bench");
+            let is_test =
+                rel_str.contains("test") || rel_str.contains("spec") || rel_str.contains("bench");
 
-            let info = modules.entry(module_name).or_insert_with(ModuleInfo::default);
+            let info = modules.entry(module_name).or_default();
 
             for &idx in indices {
                 if let Some(node) = self.get_node(idx) {
@@ -128,7 +134,10 @@ impl Palace {
                                 info.pub_fn_count += 1;
                             }
                         }
-                        NodeKind::Struct if node.visibility == Visibility::Public && node.name != "anonymous" => {
+                        NodeKind::Struct
+                            if node.visibility == Visibility::Public
+                                && node.name != "anonymous" =>
+                        {
                             info.pub_structs.insert(node.name.as_str());
                         }
                         NodeKind::Trait if node.visibility == Visibility::Public => {
@@ -137,8 +146,11 @@ impl Palace {
                         NodeKind::Enum if node.visibility == Visibility::Public => {
                             info.enums.insert(node.name.as_str());
                         }
-                        NodeKind::Role | NodeKind::Resource | NodeKind::Table
-                        | NodeKind::Message | NodeKind::Document => {
+                        NodeKind::Role
+                        | NodeKind::Resource
+                        | NodeKind::Table
+                        | NodeKind::Message
+                        | NodeKind::Document => {
                             info.domain_items.insert(node.name.as_str());
                         }
                         _ => {}
@@ -149,25 +161,44 @@ impl Palace {
 
         // Find hub nodes: top 7 most-connected (by total edge degree), deduped by name
         const NOISE_NAMES: &[&str] = &[
-            "new", "default", "into", "from", "clone", "to_string", "fmt",
-            "drop", "eq", "hash", "cmp", "partial_cmp", "main", "anonymous",
+            "new",
+            "default",
+            "into",
+            "from",
+            "clone",
+            "to_string",
+            "fmt",
+            "drop",
+            "eq",
+            "hash",
+            "cmp",
+            "partial_cmp",
+            "main",
+            "anonymous",
         ];
         let mut best_by_name: BTreeMap<&str, (&str, usize)> = BTreeMap::new();
         for idx in self.graph.node_indices() {
             if let Some(node) = self.get_node(idx) {
-                if matches!(node.kind, NodeKind::File | NodeKind::EnumVariant | NodeKind::Column | NodeKind::Impl) {
+                if matches!(
+                    node.kind,
+                    NodeKind::File | NodeKind::EnumVariant | NodeKind::Column | NodeKind::Impl
+                ) {
                     continue;
                 }
                 if NOISE_NAMES.contains(&node.name.as_str()) {
                     continue;
                 }
                 // Only count call/typeref/implements edges, not Contains
-                let meaningful_degree = self.graph.edges_directed(idx, Direction::Outgoing)
+                let meaningful_degree = self
+                    .graph
+                    .edges_directed(idx, Direction::Outgoing)
                     .filter(|e| !matches!(e.weight(), crate::graph::EdgeKind::Contains))
                     .count()
-                    + self.graph.edges_directed(idx, Direction::Incoming)
-                    .filter(|e| !matches!(e.weight(), crate::graph::EdgeKind::Contains))
-                    .count();
+                    + self
+                        .graph
+                        .edges_directed(idx, Direction::Incoming)
+                        .filter(|e| !matches!(e.weight(), crate::graph::EdgeKind::Contains))
+                        .count();
                 if meaningful_degree <= 1 {
                     continue;
                 }
@@ -181,7 +212,9 @@ impl Palace {
                     NodeKind::Message => "msg",
                     _ => "item",
                 };
-                let entry = best_by_name.entry(node.name.as_str()).or_insert((kind_tag, 0));
+                let entry = best_by_name
+                    .entry(node.name.as_str())
+                    .or_insert((kind_tag, 0));
                 if meaningful_degree > entry.1 {
                     entry.0 = kind_tag; // keep the kind of the highest-degree node
                     entry.1 = meaningful_degree;
@@ -317,7 +350,9 @@ impl Palace {
             }
             writeln!(out, "── {}", file.display()).ok();
             for &idx in indices {
-                if out.len() > max_output { break; }
+                if out.len() > max_output {
+                    break;
+                }
                 if let Some(node) = self.get_node(idx) {
                     self.write_node_skeleton(&mut out, idx, node, 1, depth);
                 }
@@ -388,7 +423,12 @@ impl Palace {
 
     /// Generate a compact, token-optimized skeleton.
     /// Collapses signatures to one line, strips noise (self, full paths, trivial calls).
-    pub fn compact_skeleton(&self, path: Option<&Path>, max_items: usize, skip_tests: bool) -> String {
+    pub fn compact_skeleton(
+        &self,
+        path: Option<&Path>,
+        max_items: usize,
+        skip_tests: bool,
+    ) -> String {
         let mut out = String::new();
 
         let nodes: Vec<NodeIndex> = if let Some(path) = path {
@@ -453,7 +493,8 @@ impl Palace {
                     // Skip test functions by name pattern
                     if skip_tests && matches!(node.kind, NodeKind::Function) {
                         let name = node.name.as_str();
-                        if name.starts_with("test_") || name.starts_with("Test")
+                        if name.starts_with("test_")
+                            || name.starts_with("Test")
                             || name.ends_with("_test")
                         {
                             continue;
@@ -473,9 +514,7 @@ impl Palace {
             }
 
             // Show relative path, disambiguating files with same name
-            let display_path = file
-                .strip_prefix(&common_prefix)
-                .unwrap_or(file);
+            let display_path = file.strip_prefix(&common_prefix).unwrap_or(file);
             writeln!(out, "─{}", display_path.display()).ok();
 
             for (idx, node) in file_items {
@@ -510,8 +549,9 @@ impl Palace {
                     NodeKind::Table => "tbl",
                     NodeKind::Endpoint => "ep",
                     NodeKind::Message => "msg",
-                    NodeKind::EnumVariant | NodeKind::Column
-                    | NodeKind::Impl | NodeKind::File => continue,
+                    NodeKind::EnumVariant | NodeKind::Column | NodeKind::Impl | NodeKind::File => {
+                        continue
+                    }
                 };
 
                 let vis = if node.visibility == Visibility::Public {
@@ -575,11 +615,7 @@ impl Palace {
     /// Compress a signature to a single line and strip noise.
     fn compress_signature(sig: &str) -> String {
         // 1. Collapse to single line
-        let oneline: String = sig
-            .lines()
-            .map(|l| l.trim())
-            .collect::<Vec<_>>()
-            .join(" ");
+        let oneline: String = sig.lines().map(|l| l.trim()).collect::<Vec<_>>().join(" ");
 
         // 2. Strip common keywords
         let compressed = oneline
@@ -630,7 +666,7 @@ impl Palace {
                         chars.next(); // consume first ':'
                         if chars.peek() == Some(&':') {
                             chars.next(); // consume second ':'
-                            // Start a new segment — discard old
+                                          // Start a new segment — discard old
                             segment.clear();
                         } else {
                             // Single ':' — keep what we have and the ':'

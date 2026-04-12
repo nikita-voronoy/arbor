@@ -117,10 +117,7 @@ impl Palace {
                     let already_exists = self
                         .graph
                         .edges_directed(caller_idx, petgraph::Direction::Outgoing)
-                        .any(|e| {
-                            e.target() == target
-                                && matches!(e.weight(), EdgeKind::Calls)
-                        });
+                        .any(|e| e.target() == target && matches!(e.weight(), EdgeKind::Calls));
                     if !already_exists {
                         self.graph.add_edge(caller_idx, target, EdgeKind::Calls);
                     }
@@ -178,7 +175,12 @@ impl Palace {
 
     /// Merge another palace into this one as a new wing.
     /// Returns the wing index.
-    pub fn merge_wing(&mut self, name: impl Into<String>, root: impl Into<PathBuf>, other: &Palace) -> usize {
+    pub fn merge_wing(
+        &mut self,
+        name: impl Into<String>,
+        root: impl Into<PathBuf>,
+        other: &Palace,
+    ) -> usize {
         let wing_idx = self.add_wing(name, root);
 
         // Map old indices to new indices
@@ -222,7 +224,7 @@ impl Palace {
                         indices.iter().filter_map(|&idx| {
                             self.graph
                                 .node_weight(idx)
-                                .map(|n| (idx, n.name.clone(), n.kind.clone()))
+                                .map(|n| (idx, n.name.clone(), n.kind))
                         })
                     })
                     .collect()
@@ -281,9 +283,20 @@ impl Palace {
 
         let mut out = format!("Cross-project tunnels ({}):\n", self.tunnels.len());
         for tunnel in &self.tunnels {
-            let from_wing = self.wings.get(tunnel.from_wing).map(|w| w.name.as_str()).unwrap_or("?");
-            let to_wing = self.wings.get(tunnel.to_wing).map(|w| w.name.as_str()).unwrap_or("?");
-            let from_name = self.get_node(tunnel.from_node).map(|n| n.name.as_str()).unwrap_or("?");
+            let from_wing = self
+                .wings
+                .get(tunnel.from_wing)
+                .map(|w| w.name.as_str())
+                .unwrap_or("?");
+            let to_wing = self
+                .wings
+                .get(tunnel.to_wing)
+                .map(|w| w.name.as_str())
+                .unwrap_or("?");
+            let from_name = self
+                .get_node(tunnel.from_node)
+                .map(|n| n.name.as_str())
+                .unwrap_or("?");
             out.push_str(&format!(
                 "  {} ←→ {} [{}] ({})\n",
                 from_wing, to_wing, from_name, tunnel.reason
@@ -304,11 +317,7 @@ impl Palace {
             .collect();
 
         let id = RoomId(self.rooms.len());
-        self.rooms.push(Room {
-            name,
-            path,
-            nodes,
-        });
+        self.rooms.push(Room { name, path, nodes });
         id
     }
 }

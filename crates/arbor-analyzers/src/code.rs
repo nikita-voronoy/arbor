@@ -79,7 +79,11 @@ impl CodeAnalyzer {
                 language: tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
                 extensions: &["ts"],
                 queries: NodeQueries {
-                    function: &["function_declaration", "method_definition", "arrow_function"],
+                    function: &[
+                        "function_declaration",
+                        "method_definition",
+                        "arrow_function",
+                    ],
                     struct_like: &["class_declaration"],
                     trait_like: &["interface_declaration"],
                     impl_block: &[],
@@ -98,7 +102,11 @@ impl CodeAnalyzer {
                 language: tree_sitter_typescript::LANGUAGE_TSX.into(),
                 extensions: &["tsx", "jsx"],
                 queries: NodeQueries {
-                    function: &["function_declaration", "method_definition", "arrow_function"],
+                    function: &[
+                        "function_declaration",
+                        "method_definition",
+                        "arrow_function",
+                    ],
                     struct_like: &["class_declaration"],
                     trait_like: &["interface_declaration"],
                     impl_block: &[],
@@ -117,7 +125,11 @@ impl CodeAnalyzer {
                 language: tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
                 extensions: &["js", "mjs", "cjs"],
                 queries: NodeQueries {
-                    function: &["function_declaration", "method_definition", "arrow_function"],
+                    function: &[
+                        "function_declaration",
+                        "method_definition",
+                        "arrow_function",
+                    ],
                     struct_like: &["class_declaration"],
                     trait_like: &[],
                     impl_block: &[],
@@ -217,9 +229,7 @@ impl CodeAnalyzer {
         parser
             .set_language(&config.language)
             .context("Failed to set language")?;
-        parser
-            .parse(source, None)
-            .context("Failed to parse file")
+        parser.parse(source, None).context("Failed to parse file")
     }
 
     fn extract_nodes(
@@ -251,14 +261,7 @@ impl CodeAnalyzer {
 
         // Walk the tree and extract nodes
         let mut cursor = root.walk();
-        self.walk_tree(
-            &mut cursor,
-            source,
-            file_path,
-            file_idx,
-            config,
-            palace,
-        );
+        self.walk_tree(&mut cursor, source, file_path, file_idx, config, palace);
     }
 
     fn walk_tree(
@@ -281,10 +284,13 @@ impl CodeAnalyzer {
             // struct foo *bar   → no body → skip (type reference, not definition)
             let has_body = ts_node.child_by_field_name("body").is_some()
                 || (0..ts_node.child_count()).any(|i| {
-                    ts_node.child(i).map(|c| {
-                        let ck = c.kind();
-                        ck == "field_declaration_list" || ck == "declaration_list"
-                    }).unwrap_or(false)
+                    ts_node
+                        .child(i)
+                        .map(|c| {
+                            let ck = c.kind();
+                            ck == "field_declaration_list" || ck == "declaration_list"
+                        })
+                        .unwrap_or(false)
                 });
             if has_body {
                 Some(NodeKind::Struct)
@@ -312,7 +318,10 @@ impl CodeAnalyzer {
             // Same logic: only index enum definitions with a body
             let has_body = ts_node.child_by_field_name("body").is_some()
                 || (0..ts_node.child_count()).any(|i| {
-                    ts_node.child(i).map(|c| c.kind() == "enumerator_list").unwrap_or(false)
+                    ts_node
+                        .child(i)
+                        .map(|c| c.kind() == "enumerator_list")
+                        .unwrap_or(false)
                 });
             if has_body {
                 Some(NodeKind::Enum)
@@ -408,20 +417,29 @@ impl CodeAnalyzer {
         // C/C++: struct_specifier / class_specifier / enum_specifier → name
         if kind == "struct_specifier" || kind == "class_specifier" || kind == "enum_specifier" {
             if let Some(name_node) = node.child_by_field_name("name") {
-                return name_node.utf8_text(source).unwrap_or("anonymous").to_string();
+                return name_node
+                    .utf8_text(source)
+                    .unwrap_or("anonymous")
+                    .to_string();
             }
         }
 
         // Python: function_definition / class_definition → name field
         if kind == "function_definition" || kind == "class_definition" {
             if let Some(name_node) = node.child_by_field_name("name") {
-                return name_node.utf8_text(source).unwrap_or("anonymous").to_string();
+                return name_node
+                    .utf8_text(source)
+                    .unwrap_or("anonymous")
+                    .to_string();
             }
         }
 
         // TS/JS: function_declaration, class_declaration → name field
         if let Some(name_node) = node.child_by_field_name("name") {
-            return name_node.utf8_text(source).unwrap_or("anonymous").to_string();
+            return name_node
+                .utf8_text(source)
+                .unwrap_or("anonymous")
+                .to_string();
         }
 
         // Fallback: first identifier/type_identifier child

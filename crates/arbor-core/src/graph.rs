@@ -68,23 +68,28 @@ pub enum Visibility {
 /// Edge kinds representing relationships between nodes
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum EdgeKind {
-    Contains,    // parent contains child (module→function)
-    Calls,       // function calls function
-    Imports,     // file/module imports another
-    Implements,  // impl implements trait
-    TypeRef,     // references a type
-    DependsOn,   // generic dependency
-    Notifies,    // ansible: task notifies handler
-    References,  // references a variable/symbol
-    LinksTo,     // docs: links to another document
-    Includes,    // includes/imports another file
+    Contains,   // parent contains child (module→function)
+    Calls,      // function calls function
+    Imports,    // file/module imports another
+    Implements, // impl implements trait
+    TypeRef,    // references a type
+    DependsOn,  // generic dependency
+    Notifies,   // ansible: task notifies handler
+    References, // references a variable/symbol
+    LinksTo,    // docs: links to another document
+    Includes,   // includes/imports another file
 }
 
 /// The core graph type
 pub type CodeGraph = StableGraph<Node, EdgeKind>;
 
 impl Node {
-    pub fn new(kind: NodeKind, name: impl Into<String>, file: impl Into<PathBuf>, span: Span) -> Self {
+    pub fn new(
+        kind: NodeKind,
+        name: impl Into<String>,
+        file: impl Into<PathBuf>,
+        span: Span,
+    ) -> Self {
         Self {
             kind,
             name: name.into(),

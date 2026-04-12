@@ -39,13 +39,8 @@ impl AnsibleAnalyzer {
                 .and_then(|n| n.to_str())
                 .unwrap_or("unknown");
 
-            let role_node = Node::new(
-                NodeKind::Role,
-                role_name,
-                &role_path,
-                Span::new(1, 1, 0, 0),
-            )
-            .with_visibility(Visibility::Public);
+            let role_node = Node::new(NodeKind::Role, role_name, &role_path, Span::new(1, 1, 0, 0))
+                .with_visibility(Visibility::Public);
             let role_idx = palace.add_node(role_node);
 
             // Parse tasks
@@ -105,9 +100,7 @@ impl AnsibleAnalyzer {
                 }
 
                 // Check for include_role / import_tasks
-                if let Some(include) = task
-                    .get("include_role")
-                    .or_else(|| task.get("import_role"))
+                if let Some(include) = task.get("include_role").or_else(|| task.get("import_role"))
                 {
                     if let Some(role_name) = include.get("name").and_then(|v| v.as_str()) {
                         let target_roles = palace.find_by_name(role_name).to_vec();
@@ -207,12 +200,7 @@ impl AnsibleAnalyzer {
                 .and_then(|n| n.to_str())
                 .unwrap_or("unknown");
 
-            let tmpl_node = Node::new(
-                NodeKind::Template,
-                tmpl_name,
-                &path,
-                Span::new(1, 1, 0, 0),
-            );
+            let tmpl_node = Node::new(NodeKind::Template, tmpl_name, &path, Span::new(1, 1, 0, 0));
             let tmpl_idx = palace.add_node(tmpl_node);
             palace.add_edge(role_idx, tmpl_idx, EdgeKind::Contains);
 
@@ -245,8 +233,7 @@ impl AnsibleAnalyzer {
             }
 
             let content = std::fs::read_to_string(&path)?;
-            let plays: Vec<serde_yaml::Value> =
-                serde_yaml::from_str(&content).unwrap_or_default();
+            let plays: Vec<serde_yaml::Value> = serde_yaml::from_str(&content).unwrap_or_default();
 
             for play in &plays {
                 let play_name = play
@@ -254,14 +241,9 @@ impl AnsibleAnalyzer {
                     .and_then(|v| v.as_str())
                     .unwrap_or("unnamed play");
 
-                let play_node = Node::new(
-                    NodeKind::Task,
-                    play_name,
-                    &path,
-                    Span::new(1, 1, 0, 0),
-                )
-                .with_visibility(Visibility::Public)
-                .with_signature(format!("play: {}", play_name));
+                let play_node = Node::new(NodeKind::Task, play_name, &path, Span::new(1, 1, 0, 0))
+                    .with_visibility(Visibility::Public)
+                    .with_signature(format!("play: {}", play_name));
                 let play_idx = palace.add_node(play_node);
 
                 // Link to roles
@@ -403,7 +385,9 @@ impl TerraformAnalyzer {
 
         let file_node = Node::new(
             NodeKind::File,
-            path.file_name().and_then(|n| n.to_str()).unwrap_or("unknown"),
+            path.file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("unknown"),
             path,
             Span::new(1, content.lines().count() as u32, 0, 0),
         );

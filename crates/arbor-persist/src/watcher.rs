@@ -64,9 +64,7 @@ pub fn watch(root: &Path) -> Result<(mpsc::Receiver<WatchEvent>, impl Drop)> {
         },
     )?;
 
-    debouncer
-        .watcher()
-        .watch(root, RecursiveMode::Recursive)?;
+    debouncer.watcher().watch(root, RecursiveMode::Recursive)?;
 
     Ok((rx, debouncer))
 }

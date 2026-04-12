@@ -101,12 +101,9 @@ fn has_extension_in_root(root: &Path, ext: &str) -> bool {
     root.read_dir()
         .ok()
         .map(|entries| {
-            entries.filter_map(|e| e.ok()).any(|e| {
-                e.path()
-                    .extension()
-                    .map(|e| e == ext)
-                    .unwrap_or(false)
-            })
+            entries
+                .filter_map(|e| e.ok())
+                .any(|e| e.path().extension().map(|e| e == ext).unwrap_or(false))
         })
         .unwrap_or(false)
 }

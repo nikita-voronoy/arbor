@@ -88,7 +88,11 @@ impl DocsAnalyzer {
                             path,
                             Span::new(line_counter, line_counter, 0, 0),
                         )
-                        .with_signature(format!("{} {}", "#".repeat(level as usize), heading_text));
+                        .with_signature(format!(
+                            "{} {}",
+                            "#".repeat(level as usize),
+                            heading_text
+                        ));
                         let section_idx = palace.add_node(section_node);
 
                         // Pop stack until we find a parent with lower level
@@ -100,10 +104,7 @@ impl DocsAnalyzer {
                             heading_stack.pop();
                         }
 
-                        let parent = heading_stack
-                            .last()
-                            .map(|(idx, _)| *idx)
-                            .unwrap_or(doc_idx);
+                        let parent = heading_stack.last().map(|(idx, _)| *idx).unwrap_or(doc_idx);
                         palace.add_edge(parent, section_idx, EdgeKind::Contains);
                         heading_stack.push((section_idx, level));
                     }
@@ -115,10 +116,8 @@ impl DocsAnalyzer {
                     if !url.starts_with("http") && !url.starts_with('#') {
                         let link_path = path.parent().unwrap_or(path).join(&url);
                         // Try to find the target document
-                        let target_name = link_path
-                            .file_name()
-                            .and_then(|n| n.to_str())
-                            .unwrap_or("");
+                        let target_name =
+                            link_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
                         let targets = palace.find_by_name(target_name).to_vec();
                         for target_idx in targets {
                             palace.add_edge(doc_idx, target_idx, EdgeKind::LinksTo);

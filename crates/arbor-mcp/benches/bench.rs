@@ -1,6 +1,6 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
 use arbor_analyzers::AnalyzerRegistry;
 use arbor_core::palace::Palace;
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use std::path::PathBuf;
 
 fn fixture(name: &str) -> PathBuf {
@@ -12,7 +12,9 @@ fn fixture(name: &str) -> PathBuf {
 fn analyze_fixture(name: &str) -> Palace {
     let mut palace = Palace::new();
     let registry = AnalyzerRegistry::new();
-    registry.analyze_project(&fixture(name), &mut palace).unwrap();
+    registry
+        .analyze_project(&fixture(name), &mut palace)
+        .unwrap();
     palace
 }
 
@@ -38,7 +40,9 @@ fn bench_indexing(c: &mut Criterion) {
             b.iter(|| {
                 let mut palace = Palace::new();
                 let registry = AnalyzerRegistry::new();
-                registry.analyze_project(&fixture(name), &mut palace).unwrap();
+                registry
+                    .analyze_project(&fixture(name), &mut palace)
+                    .unwrap();
                 black_box(&palace);
             });
         });

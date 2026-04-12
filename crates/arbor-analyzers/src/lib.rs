@@ -1,3 +1,5 @@
+#![allow(clippy::new_without_default)]
+
 pub mod code;
 pub mod docs;
 pub mod iac;
@@ -31,10 +33,16 @@ impl AnalyzerRegistry {
             analyzers: Vec::new(),
         };
         registry.analyzers.push(Box::new(code::CodeAnalyzer::new()));
-        registry.analyzers.push(Box::new(iac::AnsibleAnalyzer::new()));
-        registry.analyzers.push(Box::new(iac::TerraformAnalyzer::new()));
+        registry
+            .analyzers
+            .push(Box::new(iac::AnsibleAnalyzer::new()));
+        registry
+            .analyzers
+            .push(Box::new(iac::TerraformAnalyzer::new()));
         registry.analyzers.push(Box::new(docs::DocsAnalyzer::new()));
-        registry.analyzers.push(Box::new(schema::SchemaAnalyzer::new()));
+        registry
+            .analyzers
+            .push(Box::new(schema::SchemaAnalyzer::new()));
         registry
     }
 

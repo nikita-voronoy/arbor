@@ -30,7 +30,9 @@ impl SchemaAnalyzer {
 
         let file_node = Node::new(
             NodeKind::File,
-            path.file_name().and_then(|n| n.to_str()).unwrap_or("unknown"),
+            path.file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("unknown"),
             path,
             Span::new(1, lines.len() as u32, 0, 0),
         );
@@ -110,7 +112,9 @@ impl SchemaAnalyzer {
 
         let file_node = Node::new(
             NodeKind::File,
-            path.file_name().and_then(|n| n.to_str()).unwrap_or("unknown"),
+            path.file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("unknown"),
             path,
             Span::new(1, content.lines().count() as u32, 0, 0),
         )
@@ -125,14 +129,10 @@ impl SchemaAnalyzer {
                     for (method, _) in methods_map {
                         let method_str = method.as_str().unwrap_or("");
                         let name = format!("{} {}", method_str.to_uppercase(), endpoint);
-                        let endpoint_node = Node::new(
-                            NodeKind::Endpoint,
-                            &name,
-                            path,
-                            Span::new(1, 1, 0, 0),
-                        )
-                        .with_visibility(Visibility::Public)
-                        .with_signature(name.clone());
+                        let endpoint_node =
+                            Node::new(NodeKind::Endpoint, &name, path, Span::new(1, 1, 0, 0))
+                                .with_visibility(Visibility::Public)
+                                .with_signature(name.clone());
                         let ep_idx = palace.add_node(endpoint_node);
                         palace.add_edge(file_idx, ep_idx, EdgeKind::Contains);
                     }
@@ -149,13 +149,8 @@ impl SchemaAnalyzer {
         if let Some(schemas_map) = schemas.and_then(|v| v.as_mapping()) {
             for (schema_name, _) in schemas_map {
                 let name = schema_name.as_str().unwrap_or("");
-                let schema_node = Node::new(
-                    NodeKind::Message,
-                    name,
-                    path,
-                    Span::new(1, 1, 0, 0),
-                )
-                .with_visibility(Visibility::Public);
+                let schema_node = Node::new(NodeKind::Message, name, path, Span::new(1, 1, 0, 0))
+                    .with_visibility(Visibility::Public);
                 let schema_idx = palace.add_node(schema_node);
                 palace.add_edge(file_idx, schema_idx, EdgeKind::Contains);
             }
@@ -170,7 +165,9 @@ impl SchemaAnalyzer {
 
         let file_node = Node::new(
             NodeKind::File,
-            path.file_name().and_then(|n| n.to_str()).unwrap_or("unknown"),
+            path.file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("unknown"),
             path,
             Span::new(1, lines.len() as u32, 0, 0),
         );
@@ -221,7 +218,10 @@ impl SchemaAnalyzer {
                     Span::new(line_num, line_num, 0, 0),
                 )
                 .with_visibility(Visibility::Public)
-                .with_signature(format!("rpc {}({}) returns ({})", &cap[1], &cap[2], &cap[3]));
+                .with_signature(format!(
+                    "rpc {}({}) returns ({})",
+                    &cap[1], &cap[2], &cap[3]
+                ));
                 let rpc_idx = palace.add_node(rpc_node);
                 palace.add_edge(current_parent, rpc_idx, EdgeKind::Contains);
 
@@ -280,10 +280,7 @@ impl SchemaAnalyzer {
 
     fn dispatch_file(&self, path: &Path, palace: &mut Palace) -> Result<()> {
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-        let name = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("");
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
         match ext {
             "sql" => self.parse_sql(path, palace)?,
