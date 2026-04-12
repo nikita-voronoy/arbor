@@ -1,9 +1,9 @@
-use petgraph::stable_graph::{NodeIndex, StableGraph};
+use petgraph::stable_graph::StableGraph;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 /// Unified node kinds across all project types
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum NodeKind {
     // Code
     File,
@@ -47,7 +47,6 @@ pub struct Node {
     pub span: Span,
     pub signature: Option<String>,
     pub visibility: Visibility,
-    pub children: Vec<NodeIndex>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -97,7 +96,6 @@ impl Node {
             span,
             signature: None,
             visibility: Visibility::Private,
-            children: Vec::new(),
         }
     }
 

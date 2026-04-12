@@ -1,8 +1,8 @@
 use crate::graph::{NodeKind, Visibility};
 use crate::palace::Palace;
+use petgraph::Direction;
 use petgraph::stable_graph::NodeIndex;
 use petgraph::visit::{EdgeRef, IntoEdgeReferences};
-use petgraph::Direction;
 use std::collections::BTreeSet;
 use std::fmt::Write;
 use std::path::{Path, PathBuf};
@@ -409,10 +409,10 @@ impl Palace {
         // Show call edges compactly (deduplicated)
         let mut call_set = std::collections::BTreeSet::new();
         for e in self.graph.edges_directed(idx, Direction::Outgoing) {
-            if matches!(e.weight(), crate::graph::EdgeKind::Calls) {
-                if let Some(n) = self.get_node(e.target()) {
-                    call_set.insert(n.name.as_str());
-                }
+            if matches!(e.weight(), crate::graph::EdgeKind::Calls)
+                && let Some(n) = self.get_node(e.target())
+            {
+                call_set.insert(n.name.as_str());
             }
         }
         if !call_set.is_empty() {
@@ -457,7 +457,7 @@ impl Palace {
         let common_prefix = Self::common_prefix(by_file.keys().copied());
 
         let mut count = 0;
-        let mut global_seen: std::collections::HashSet<(String, String)> =
+        let mut global_seen: std::collections::HashSet<(&str, NodeKind)> =
             std::collections::HashSet::new();
 
         // Trivial call targets to suppress (constructors, etc.)
@@ -500,7 +500,7 @@ impl Palace {
                             continue;
                         }
                     }
-                    let dedup_key = (node.name.clone(), format!("{:?}", node.kind));
+                    let dedup_key = (node.name.as_str(), node.kind);
                     if !global_seen.insert(dedup_key) {
                         continue;
                     }
@@ -550,7 +550,7 @@ impl Palace {
                     NodeKind::Endpoint => "ep",
                     NodeKind::Message => "msg",
                     NodeKind::EnumVariant | NodeKind::Column | NodeKind::Impl | NodeKind::File => {
-                        continue
+                        continue;
                     }
                 };
 
@@ -580,21 +580,20 @@ impl Palace {
                     continue;
                 }
 
-                let label = if let Some(sig) = &node.signature {
-                    Self::compress_signature(sig)
+                let label: std::borrow::Cow<str> = if let Some(sig) = &node.signature {
+                    std::borrow::Cow::Owned(Self::compress_signature(sig))
                 } else {
-                    node.name.clone()
+                    std::borrow::Cow::Borrowed(&node.name)
                 };
 
                 // Call edges — filter out noise
                 let mut call_set = std::collections::BTreeSet::new();
                 for e in self.graph.edges_directed(idx, Direction::Outgoing) {
-                    if matches!(e.weight(), crate::graph::EdgeKind::Calls) {
-                        if let Some(n) = self.get_node(e.target()) {
-                            if !NOISE_CALLS.contains(&n.name.as_str()) {
-                                call_set.insert(n.name.as_str());
-                            }
-                        }
+                    if matches!(e.weight(), crate::graph::EdgeKind::Calls)
+                        && let Some(n) = self.get_node(e.target())
+                        && !NOISE_CALLS.contains(&n.name.as_str())
+                    {
+                        call_set.insert(n.name.as_str());
                     }
                 }
                 let calls: Vec<&str> = call_set.into_iter().collect();
@@ -666,7 +665,7 @@ impl Palace {
                         chars.next(); // consume first ':'
                         if chars.peek() == Some(&':') {
                             chars.next(); // consume second ':'
-                                          // Start a new segment — discard old
+                            // Start a new segment — discard old
                             segment.clear();
                         } else {
                             // Single ':' — keep what we have and the ':'
