@@ -168,7 +168,7 @@ MIT — see [LICENSE](LICENSE).
 
 <p align="center">
   <a href="https://buymeacoffee.com/nick_voronoy">
-    <img src="https://img.buymeacoffee.com/button-api/?text=Buy me a coffee&emoji=🌳&slug=nick_voronoy&button_colour=5F7FFF&font_colour=ffffff&font_family=Inter&outline_colour=000000&coffee_colour=FFDD00" alt="Buy Me A Coffee">
+    <img src="https://img.buymeacoffee.com/button-api/?text=Buy me a coffee&emoji=☕&slug=nick_voronoy&button_colour=5F7FFF&font_colour=ffffff&font_family=Inter&outline_colour=000000&coffee_colour=FFDD00" alt="Buy Me A Coffee">
   </a>
 </p>
 
