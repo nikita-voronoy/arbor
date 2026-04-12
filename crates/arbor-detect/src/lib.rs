@@ -1,3 +1,3 @@
 pub mod markers;
 
-pub use markers::{detect, ProjectFacet};
+pub use markers::{ProjectFacet, detect};

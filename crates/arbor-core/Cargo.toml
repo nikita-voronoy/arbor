@@ -1,10 +1,11 @@
 [package]
 name = "arbor-core"
 version = "0.1.2"
-edition = "2021"
+edition = "2024"
 
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
 petgraph = { workspace = true }
+rustc-hash = { workspace = true }

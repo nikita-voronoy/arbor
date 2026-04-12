@@ -101,12 +101,11 @@ impl AnsibleAnalyzer {
 
                 // Check for include_role / import_tasks
                 if let Some(include) = task.get("include_role").or_else(|| task.get("import_role"))
+                    && let Some(role_name) = include.get("name").and_then(|v| v.as_str())
                 {
-                    if let Some(role_name) = include.get("name").and_then(|v| v.as_str()) {
-                        let target_roles = palace.find_by_name(role_name).to_vec();
-                        for target_idx in target_roles {
-                            palace.add_edge(task_idx, target_idx, EdgeKind::Includes);
-                        }
+                    let target_roles = palace.find_by_name(role_name).to_vec();
+                    for target_idx in target_roles {
+                        palace.add_edge(task_idx, target_idx, EdgeKind::Includes);
                     }
                 }
             }
@@ -247,36 +246,36 @@ impl AnsibleAnalyzer {
                 let play_idx = palace.add_node(play_node);
 
                 // Link to roles
-                if let Some(roles) = play.get("roles") {
-                    if let Some(roles_seq) = roles.as_sequence() {
-                        for role_val in roles_seq {
-                            let role_name = role_val
-                                .as_str()
-                                .or_else(|| role_val.get("role").and_then(|v| v.as_str()));
-                            if let Some(name) = role_name {
-                                let role_nodes = palace.find_by_name(name).to_vec();
-                                for role_idx in role_nodes {
-                                    palace.add_edge(play_idx, role_idx, EdgeKind::DependsOn);
-                                }
+                if let Some(roles) = play.get("roles")
+                    && let Some(roles_seq) = roles.as_sequence()
+                {
+                    for role_val in roles_seq {
+                        let role_name = role_val
+                            .as_str()
+                            .or_else(|| role_val.get("role").and_then(|v| v.as_str()));
+                        if let Some(name) = role_name {
+                            let role_nodes = palace.find_by_name(name).to_vec();
+                            for role_idx in role_nodes {
+                                palace.add_edge(play_idx, role_idx, EdgeKind::DependsOn);
                             }
                         }
                     }
                 }
 
                 // Extract variable references from tasks in the play
-                if let Some(tasks) = play.get("tasks") {
-                    if let Some(tasks_seq) = tasks.as_sequence() {
-                        for (i, task) in tasks_seq.iter().enumerate() {
-                            if let Some(name) = task.get("name").and_then(|v| v.as_str()) {
-                                let task_node = Node::new(
-                                    NodeKind::Task,
-                                    name,
-                                    &path,
-                                    Span::new(i as u32 + 1, i as u32 + 1, 0, 0),
-                                );
-                                let task_idx = palace.add_node(task_node);
-                                palace.add_edge(play_idx, task_idx, EdgeKind::Contains);
-                            }
+                if let Some(tasks) = play.get("tasks")
+                    && let Some(tasks_seq) = tasks.as_sequence()
+                {
+                    for (i, task) in tasks_seq.iter().enumerate() {
+                        if let Some(name) = task.get("name").and_then(|v| v.as_str()) {
+                            let task_node = Node::new(
+                                NodeKind::Task,
+                                name,
+                                &path,
+                                Span::new(i as u32 + 1, i as u32 + 1, 0, 0),
+                            );
+                            let task_idx = palace.add_node(task_node);
+                            palace.add_edge(play_idx, task_idx, EdgeKind::Contains);
                         }
                     }
                 }

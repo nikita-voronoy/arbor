@@ -92,13 +92,13 @@ impl SchemaAnalyzer {
             }
 
             // Standalone REFERENCES / FOREIGN KEY
-            if let Some(fk_cap) = self.fk_re.captures(line) {
-                if let Some((table_idx, _)) = &current_table {
-                    let ref_table = fk_cap[1].to_string();
-                    let targets = palace.find_by_name(&ref_table).to_vec();
-                    for target_idx in targets {
-                        palace.add_edge(*table_idx, target_idx, EdgeKind::References);
-                    }
+            if let Some(fk_cap) = self.fk_re.captures(line)
+                && let Some((table_idx, _)) = &current_table
+            {
+                let ref_table = fk_cap[1].to_string();
+                let targets = palace.find_by_name(&ref_table).to_vec();
+                for target_idx in targets {
+                    palace.add_edge(*table_idx, target_idx, EdgeKind::References);
                 }
             }
         }
