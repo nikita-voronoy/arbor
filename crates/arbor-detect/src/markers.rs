@@ -10,6 +10,7 @@ pub enum ProjectFacet {
     Go,
     C,
     Cpp,
+    CSharp,
     Ansible,
     Terraform,
     Docker,
@@ -27,6 +28,7 @@ impl ProjectFacet {
             Self::Go => "go",
             Self::C => "c",
             Self::Cpp => "cpp",
+            Self::CSharp => "csharp",
             Self::Ansible => "ansible",
             Self::Terraform => "terraform",
             Self::Docker => "docker",
@@ -72,6 +74,16 @@ pub fn detect(root: &Path) -> Vec<ProjectFacet> {
     {
         facets.push(ProjectFacet::Cpp);
     }
+    if has_extension_in_root(root, "sln")
+        || has_extension_in_root(root, "csproj")
+        || has_extension_in_root(root, "cs")
+        || has_extension_in_subdir(root, "csproj")
+        || has_extension_in_subdir(root, "cs")
+        || has_extension_in_subdir(&root.join("src"), "csproj")
+        || has_extension_in_subdir(&root.join("src"), "cs")
+    {
+        facets.push(ProjectFacet::CSharp);
+    }
     if root.join("ansible.cfg").exists()
         || root.join("playbooks").is_dir()
         || root.join("roles").is_dir()
@@ -104,6 +116,38 @@ fn has_extension_in_root(root: &Path, ext: &str) -> bool {
             entries
                 .filter_map(|e| e.ok())
                 .any(|e| e.path().extension().map(|e| e == ext).unwrap_or(false))
+        })
+        .unwrap_or(false)
+}
+
+/// Check immediate subdirectories (one level) for files with given extension.
+/// Only scans non-hidden, non-build dirs to stay fast on large repos.
+fn has_extension_in_subdir(root: &Path, ext: &str) -> bool {
+    const SKIP: &[&str] = &[
+        "target",
+        "node_modules",
+        ".git",
+        "__pycache__",
+        "vendor",
+        "dist",
+        "build",
+        "bin",
+        "obj",
+    ];
+    root.read_dir()
+        .ok()
+        .map(|entries| {
+            entries.filter_map(|e| e.ok()).any(|e| {
+                let p = e.path();
+                if !p.is_dir() {
+                    return false;
+                }
+                let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                if name.starts_with('.') || SKIP.contains(&name) {
+                    return false;
+                }
+                has_extension_in_root(&p, ext)
+            })
         })
         .unwrap_or(false)
 }

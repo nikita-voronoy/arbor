@@ -16,10 +16,13 @@ tree-sitter-typescript = "0.23"
 tree-sitter-go = "0.25"
 tree-sitter-c = "0.24"
 tree-sitter-cpp = "0.23"
+tree-sitter-c-sharp = "0.23"
 serde_yaml = "0.9"
 pulldown-cmark = "0.12"
 regex = "1"
 ignore = "0.4"
+rayon = "1"
+stacker = "0.1"
 
 [dev-dependencies]
 tempfile = "3.27.0"
