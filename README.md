@@ -40,24 +40,24 @@ The LLM sees the architecture first, then drills into exactly what it needs.
 
 ## Quick Start
 
-### Install
+One command — installs arbor and connects it to Claude Code:
 
 ```bash
-cargo install --path crates/arbor-mcp
+curl -fsSL https://raw.githubusercontent.com/nikita-voronoy/arbor/main/install.sh | bash
 ```
 
-### Add to Claude Code
+<details>
+<summary>Manual install</summary>
 
-```json
-{
-  "mcpServers": {
-    "arbor": {
-      "command": "arbor",
-      "args": ["/path/to/your/project"]
-    }
-  }
-}
+```bash
+# Build from source
+cargo install --git https://github.com/nikita-voronoy/arbor.git arbor-mcp
+
+# Add to Claude Code
+claude mcp add arbor -- arbor
 ```
+
+</details>
 
 That's it. Claude will now call `boot` → `compact` → `search` → `references` as needed.
 
