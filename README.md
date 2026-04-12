@@ -46,8 +46,14 @@ The LLM sees the architecture first, then drills into exactly what it needs.
 
 One command — installs arbor and connects it to Claude Code:
 
+**macOS / Linux:**
 ```bash
 curl -fsSL https://raw.githubusercontent.com/nikita-voronoy/arbor/main/install.sh | bash
+```
+
+**Windows (PowerShell):**
+```powershell
+irm https://raw.githubusercontent.com/nikita-voronoy/arbor/main/install.ps1 | iex
 ```
 
 <details>

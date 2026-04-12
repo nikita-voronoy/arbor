@@ -732,6 +732,125 @@ fn schema_protobuf_rpcs() {
 }
 
 // ============================================================
+//  C# — for my bro @cntseesharp
+// ============================================================
+
+#[test]
+fn csharp_detect() {
+    let (_, facets) = analyze("csharp-project");
+    assert!(facets.contains(&ProjectFacet::CSharp));
+}
+
+#[test]
+fn csharp_classes() {
+    let (p, _) = analyze("csharp-project");
+    for name in ["Program", "User", "Session", "AuthService"] {
+        assert!(
+            find_kind(&p, name, NodeKind::Struct).is_some(),
+            "should find C# class: {}",
+            name
+        );
+    }
+}
+
+#[test]
+fn csharp_interfaces() {
+    let (p, _) = analyze("csharp-project");
+    assert!(
+        find_kind(&p, "IAuthProvider", NodeKind::Trait).is_some(),
+        "should find C# interface"
+    );
+}
+
+#[test]
+fn csharp_enums() {
+    let (p, _) = analyze("csharp-project");
+    assert!(
+        find_kind(&p, "Role", NodeKind::Enum).is_some(),
+        "should find C# enum"
+    );
+    for variant in ["Admin", "Editor", "Viewer", "Guest"] {
+        assert!(
+            find_kind(&p, variant, NodeKind::EnumVariant).is_some(),
+            "should find enum member: {}",
+            variant
+        );
+    }
+}
+
+#[test]
+fn csharp_methods() {
+    let (p, _) = analyze("csharp-project");
+    for name in [
+        "Main",
+        "Login",
+        "Logout",
+        "FindUser",
+        "VerifyPassword",
+        "Authenticate",
+        "Revoke",
+    ] {
+        assert!(
+            find_fn(&p, name).is_some(),
+            "should find C# method: {}",
+            name
+        );
+    }
+}
+
+#[test]
+fn csharp_visibility() {
+    let (p, _) = analyze("csharp-project");
+    let login = find_fn(&p, "Login").unwrap();
+    assert_eq!(
+        login.visibility,
+        Visibility::Public,
+        "Login should be public"
+    );
+    let find = find_fn(&p, "FindUser").unwrap();
+    assert_eq!(
+        find.visibility,
+        Visibility::Private,
+        "FindUser should be private"
+    );
+}
+
+#[test]
+fn csharp_signatures() {
+    let (p, _) = analyze("csharp-project");
+    let login = find_fn(&p, "Login").unwrap();
+    let sig = login.signature.as_deref().unwrap();
+    assert!(
+        sig.contains("username"),
+        "sig should contain param: {}",
+        sig
+    );
+    assert!(
+        sig.contains("User"),
+        "sig should contain return type: {}",
+        sig
+    );
+}
+
+#[test]
+fn csharp_call_graph() {
+    let (p, _) = analyze("csharp-project");
+    let refs = p.references("Login");
+    let calls: Vec<_> = refs
+        .iter()
+        .filter(|r| matches!(r.kind, ReferenceKind::Call))
+        .collect();
+    assert!(!calls.is_empty(), "Main should call Login");
+}
+
+#[test]
+fn csharp_search() {
+    let (p, _) = analyze("csharp-project");
+    let results = p.search("Auth");
+    assert!(!results.is_empty(), "should find AuthService by substring");
+}
+
+// ============================================================
 //  MIXED PROJECT (Rust + Ansible + Docs)
 // ============================================================
 

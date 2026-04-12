@@ -199,6 +199,33 @@ impl CodeAnalyzer {
             },
         );
 
+        languages.insert(
+            "csharp",
+            LanguageConfig {
+                language: tree_sitter_c_sharp::LANGUAGE.into(),
+                extensions: &["cs"],
+                queries: NodeQueries {
+                    function: &[
+                        "method_declaration",
+                        "constructor_declaration",
+                        "local_function_statement",
+                    ],
+                    struct_like: &[
+                        "class_declaration",
+                        "struct_declaration",
+                        "record_declaration",
+                    ],
+                    trait_like: &["interface_declaration"],
+                    impl_block: &[],
+                    enum_def: &["enum_declaration"],
+                    enum_variant: &["enum_member_declaration"],
+                    macro_def: &[],
+                    use_decl: &["using_directive"],
+                    call_expr: &["invocation_expression", "object_creation_expression"],
+                },
+            },
+        );
+
         Self { languages }
     }
 
@@ -392,10 +419,12 @@ impl CodeAnalyzer {
             parent_idx
         };
 
-        // Recurse into children
+        // Recurse into children (with stack growth for deeply nested ASTs)
         if cursor.goto_first_child() {
             loop {
-                self.walk_tree(cursor, source, file_path, current_parent, config, palace);
+                stacker::maybe_grow(64 * 1024, 2 * 1024 * 1024, || {
+                    self.walk_tree(cursor, source, file_path, current_parent, config, palace);
+                });
                 if !cursor.goto_next_sibling() {
                     break;
                 }
@@ -514,6 +543,22 @@ impl CodeAnalyzer {
             return Some(sig.to_string());
         }
 
+        // C#: method_declaration, constructor_declaration → everything before body
+        if kind == "method_declaration" || kind == "constructor_declaration" {
+            let start = node.start_byte();
+            let end = node
+                .child_by_field_name("body")
+                .map(|b| b.start_byte())
+                .unwrap_or(node.end_byte());
+            let sig = std::str::from_utf8(&source[start..end])
+                .unwrap_or("")
+                .trim();
+            if sig.len() > 200 {
+                return Some(format!("{}...", &sig[..200]));
+            }
+            return Some(sig.to_string());
+        }
+
         None
     }
 
@@ -553,6 +598,19 @@ impl CodeAnalyzer {
                 // TS/JS: export = public
                 if ck == "export" || ck == "export_statement" {
                     return Visibility::Public;
+                }
+                // C#: modifier keywords
+                if ck == "modifier" {
+                    let text = child.utf8_text(source).unwrap_or("");
+                    if text == "public" {
+                        return Visibility::Public;
+                    }
+                    if text == "internal" {
+                        return Visibility::Crate;
+                    }
+                    if text == "private" || text == "protected" {
+                        return Visibility::Private;
+                    }
                 }
             }
         }
@@ -610,7 +668,9 @@ impl CodeAnalyzer {
 
         if cursor.goto_first_child() {
             loop {
-                self.find_calls_recursive(cursor, source, fn_idx, config, palace);
+                stacker::maybe_grow(64 * 1024, 2 * 1024 * 1024, || {
+                    self.find_calls_recursive(cursor, source, fn_idx, config, palace);
+                });
                 if !cursor.goto_next_sibling() {
                     break;
                 }
@@ -643,16 +703,34 @@ impl Analyzer for CodeAnalyzer {
                 | ProjectFacet::Go
                 | ProjectFacet::C
                 | ProjectFacet::Cpp
+                | ProjectFacet::CSharp
         )
     }
 
     fn analyze(&self, root: &Path, palace: &mut Palace) -> Result<()> {
+        use rayon::prelude::*;
+
         let files = self.walk_files(root);
-        for file in files {
-            let source = std::fs::read_to_string(&file)
-                .with_context(|| format!("Failed to read {}", file.display()))?;
-            self.analyze_file(&file, &source, palace)?;
+
+        // Phase 1: read + parse in parallel (I/O + CPU bound)
+        let parsed: Vec<_> = files
+            .par_iter()
+            .filter_map(|file| {
+                let source = std::fs::read_to_string(file).ok()?;
+                let (_, config) = self.language_for_file(file)?;
+                let mut parser = Parser::new();
+                parser.set_language(&config.language).ok()?;
+                let tree = parser.parse(&source, None)?;
+                Some((file.clone(), source, tree))
+            })
+            .collect();
+
+        // Phase 2: extract nodes sequentially (mutates Palace)
+        for (file, source, tree) in &parsed {
+            let (_, config) = self.language_for_file(file).unwrap();
+            self.extract_nodes(tree, source.as_bytes(), file, config, palace);
         }
+
         Ok(())
     }
 
