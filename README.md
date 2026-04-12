@@ -73,16 +73,17 @@ arbor /path/to/project --compact
 ## How It Works
 
 ```
-  Source files                    Symbol graph               LLM context
- ┌─────────────┐   tree-sitter  ┌──────────────┐   MCP    ┌────────────┐
- │ .rs .py .ts  │──────────────▶│  functions    │────────▶│ boot ~150t │
- │ .go .c .cpp  │   parse       │  structs      │  tools  │ compact    │
- │ .tf .yml .sql│──────────────▶│  traits+edges │────────▶│ search     │
- └─────────────┘   analyze      └──────────────┘  query   │ references │
-                                       │                   │ impact     │
-                                       ▼                   └────────────┘
-                                 .arbor/index.bin
-                                 (incremental)
+ Source files           Symbol graph          LLM context
+┌──────────────┐       ┌──────────────┐      ┌────────────┐
+│ .rs .py .ts  │       │  functions   │      │ boot ~150t │
+│ .go .c .cpp  ├──────▶│  structs     ├─────▶│ compact    │
+│ .tf .yml .sql│ parse │  traits      │ MCP  │ search     │
+└──────────────┘       │  edges       │tools │ references │
+                       └──────┬───────┘      │ impact     │
+                              │              └────────────┘
+                              ▼
+                       .arbor/index.bin
+                        (incremental)
 ```
 
 1. **Index** — tree-sitter parses every source file into AST nodes. Arbor extracts functions, structs, traits, enums, calls, imports, type references.
