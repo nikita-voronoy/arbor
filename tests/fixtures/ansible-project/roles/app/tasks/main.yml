@@ -1,0 +1,17 @@
+---
+- name: Create app directory
+  file:
+    path: "{{ app_dir }}"
+    state: directory
+
+- name: Deploy application
+  copy:
+    src: "{{ app_artifact }}"
+    dest: "{{ app_dir }}/app"
+    mode: '0755'
+
+- name: Start application
+  systemd:
+    name: myapp
+    state: started
+    enabled: true

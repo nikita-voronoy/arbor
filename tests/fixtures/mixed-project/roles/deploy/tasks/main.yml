@@ -1,0 +1,5 @@
+---
+- name: Deploy app
+  copy:
+    src: target/release/mixed-app
+    dest: /opt/app/mixed-app

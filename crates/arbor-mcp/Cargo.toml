@@ -1,0 +1,29 @@
+[package]
+name = "arbor-mcp"
+version = "0.1.1"
+edition = "2021"
+
+[[bin]]
+name = "arbor"
+path = "src/main.rs"
+
+[dependencies]
+arbor-core = { path = "../arbor-core" }
+arbor-detect = { path = "../arbor-detect" }
+arbor-analyzers = { path = "../arbor-analyzers" }
+arbor-persist = { path = "../arbor-persist" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+rmcp = { version = "1.4", features = ["server", "transport-io"] }
+schemars = "1"
+tokio = { version = "1", features = ["full"] }
+parking_lot = "0.12"
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+tempfile = "3"
+
+[[bench]]
+name = "bench"
+harness = false

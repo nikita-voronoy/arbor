@@ -1,0 +1,19 @@
+---
+- name: Deploy application
+  hosts: webservers
+  become: true
+  roles:
+    - nginx
+    - app
+  tasks:
+    - name: Verify deployment
+      uri:
+        url: "http://{{ app_host }}:{{ app_port }}/health"
+        status_code: 200
+      register: health_check
+
+    - name: Send notification
+      slack:
+        token: "{{ slack_token }}"
+        msg: "Deployment complete on {{ inventory_hostname }}"
+      when: health_check.status == 200

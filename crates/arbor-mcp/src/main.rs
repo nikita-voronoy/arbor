@@ -1,0 +1,43 @@
+use anyhow::Result;
+use rmcp::ServiceExt;
+use std::path::PathBuf;
+use tokio::io::{stdin, stdout};
+
+mod tools;
+use tools::ArborServer;
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    let args: Vec<String> = std::env::args().collect();
+
+    let cli_mode = args.iter().any(|a| a == "--cli");
+    let compact_mode = args.iter().any(|a| a == "--compact");
+    let root = args
+        .iter()
+        .find(|a| !a.starts_with('-') && *a != &args[0])
+        .map(PathBuf::from)
+        .unwrap_or_else(|| std::env::current_dir().unwrap());
+
+    let root = std::fs::canonicalize(&root)?;
+
+    eprintln!("Arbor: indexing {}...", root.display());
+    let server = ArborServer::new(root)?;
+
+    if cli_mode || compact_mode {
+        let boot = server.boot_cli();
+        println!("{}", boot);
+        if compact_mode {
+            println!("{}", server.compact_cli());
+        } else {
+            println!("{}", server.skeleton_cli());
+        }
+        return Ok(());
+    }
+
+    eprintln!("Arbor: ready, starting MCP server on stdio");
+    let transport = (stdin(), stdout());
+    let service = server.serve(transport).await?;
+    service.waiting().await?;
+
+    Ok(())
+}

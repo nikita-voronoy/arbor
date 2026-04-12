@@ -1,0 +1,30 @@
+name: Language Support
+description: Request support for a new language or framework
+labels: ["enhancement", "language"]
+body:
+  - type: input
+    id: language
+    attributes:
+      label: Language / framework
+      placeholder: "Ruby, Kotlin, Swift, Zig, ..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use case
+      description: What project are you trying to index?
+      placeholder: "A Rails monolith with 500+ Ruby files..."
+
+  - type: checkboxes
+    id: features
+    attributes:
+      label: What should be indexed?
+      options:
+        - label: Functions / methods
+        - label: Classes / structs
+        - label: Interfaces / traits / protocols
+        - label: Enums
+        - label: Call graph (who calls what)
+        - label: Imports / requires

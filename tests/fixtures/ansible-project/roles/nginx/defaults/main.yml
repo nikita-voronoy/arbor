@@ -1,0 +1,4 @@
+---
+nginx_port: 80
+nginx_server_name: "{{ app_host }}"
+nginx_proxy_pass: "http://127.0.0.1:{{ app_port }}"
