@@ -8,6 +8,46 @@ use tree_sitter::{Language, Parser, Tree};
 
 use crate::Analyzer;
 
+/// Returns `true` for files that look like minified bundles and should be skipped.
+///
+/// Checks two things:
+/// 1. Filename patterns: `.min.js`, `.min.css`, `.bundle.js`, `-bundle.js`
+/// 2. Large files with very long lines (>100KB with avg line >500 chars) — a
+///    hallmark of bundler output even without `.min` in the name.
+fn is_minified_file(path: &Path) -> bool {
+    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+
+    // Filename-based detection
+    if name.ends_with(".min.js")
+        || name.ends_with(".min.css")
+        || name.ends_with(".min.mjs")
+        || name.ends_with(".bundle.js")
+        || name.ends_with("-bundle.js")
+        || name.ends_with(".chunk.js")
+    {
+        return true;
+    }
+
+    // Size-based heuristic: files >100KB with very long average lines
+    if let Ok(meta) = path.metadata()
+        && meta.len() > 100_000
+    {
+        // Read just the first 4KB to estimate line length
+        if let Ok(sample) = std::fs::read(path).map(|b| {
+            let end = b.len().min(4096);
+            String::from_utf8_lossy(&b[..end]).to_string()
+        }) {
+            let lines = sample.lines().count().max(1);
+            let avg_len = sample.len() / lines;
+            if avg_len > 500 {
+                return true;
+            }
+        }
+    }
+
+    false
+}
+
 pub struct CodeAnalyzer {
     languages: HashMap<&'static str, LanguageConfig>,
 }
@@ -412,6 +452,14 @@ impl CodeAnalyzer {
                             | "testdata"
                             | "__pycache__"
                             | ".git"
+                            | "dist"
+                            | "build"
+                            | ".next"
+                            | ".nuxt"
+                            | "out"
+                            | "__generated__"
+                            | ".output"
+                            | "coverage"
                     )
                 } else {
                     true
@@ -422,6 +470,7 @@ impl CodeAnalyzer {
             .filter(|entry| entry.file_type().is_some_and(|ft| ft.is_file()))
             .map(ignore::DirEntry::into_path)
             .filter(|path| self.language_for_file(path).is_some())
+            .filter(|path| !is_minified_file(path))
             .collect()
     }
 
