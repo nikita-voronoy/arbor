@@ -25,93 +25,12 @@ impl ArborServer {
         let facet_labels: Vec<String> = facets.iter().map(|f| f.label().to_string()).collect();
 
         let cached_palace = arbor_persist::store::load(&root).unwrap_or(None);
-        let is_fresh = cached_palace.is_none();
         let mut palace = cached_palace.unwrap_or_default();
 
-        let changed = if is_fresh {
-            // Fresh index — just analyze everything, no hashing overhead
-            registry.analyze_project(&root, &mut palace)?;
-            palace.resolve_pending_calls();
-
-            // Hash indexed files for next time (only files Palace knows about)
-            let mut hashes = arbor_persist::hasher::FileHashes::new();
-            for path in palace.file_paths() {
-                let _ = hashes.check_file(path);
-            }
-            hashes.save(&root)?;
-            0usize
+        let changed = if palace.node_count() == 0 {
+            Self::full_index(&root, &registry, &mut palace)?
         } else {
-            // Incremental update — only re-analyze changed files
-            let mut hashes = arbor_persist::hasher::FileHashes::load(&root).unwrap_or_default();
-
-            // Only walk files the analyzers care about (not ALL files)
-            let current_files: std::collections::HashSet<PathBuf> =
-                palace.file_paths().map(Path::to_path_buf).collect();
-
-            // Check for deleted files
-            let tracked: Vec<PathBuf> = hashes
-                .tracked_files()
-                .map(std::path::Path::to_path_buf)
-                .collect();
-            for path in &tracked {
-                if !path.exists() {
-                    palace.remove_file(path);
-                    hashes.remove_file(path);
-                }
-            }
-
-            // Check for modified files
-            let mut changed_files = Vec::new();
-            for path in &current_files {
-                if let Ok(
-                    arbor_persist::hasher::FileStatus::New
-                    | arbor_persist::hasher::FileStatus::Modified,
-                ) = hashes.check_file(path)
-                {
-                    palace.remove_file(path);
-                    changed_files.push(path.clone());
-                }
-            }
-
-            // Also check for new files (not in cache) by re-walking
-            // This is needed to pick up newly created files
-            let all_files = arbor_persist::watcher::walk_files(&root);
-            for path in &all_files {
-                if !current_files.contains(path)
-                    && matches!(
-                        hashes.check_file(path),
-                        Ok(arbor_persist::hasher::FileStatus::New)
-                    )
-                {
-                    changed_files.push(path.clone());
-                }
-            }
-
-            let count = changed_files.len();
-            let mut errors = 0usize;
-            for path in &changed_files {
-                match std::fs::read_to_string(path) {
-                    Ok(source) => {
-                        for analyzer in registry.for_facets(&facets) {
-                            if let Err(e) = analyzer.analyze_file(path, &source, &mut palace) {
-                                eprintln!("Arbor: failed to analyze {}: {e}", path.display());
-                                errors += 1;
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!("Arbor: failed to read {}: {e}", path.display());
-                        errors += 1;
-                    }
-                }
-            }
-            if errors > 0 {
-                eprintln!("Arbor: {errors} file(s) had errors during incremental update");
-            }
-
-            palace.resolve_pending_calls();
-            hashes.save(&root)?;
-            count
+            Self::incremental_update(&root, &registry, &facets, &mut palace)?
         };
 
         arbor_persist::store::save(&palace, &root)?;
@@ -126,6 +45,100 @@ impl ArborServer {
             facets: facet_labels,
             tool_router: Self::tool_router(),
         })
+    }
+
+    /// Full index from scratch — no hashing overhead during analysis.
+    fn full_index(
+        root: &Path,
+        registry: &AnalyzerRegistry,
+        palace: &mut Palace,
+    ) -> anyhow::Result<usize> {
+        registry.analyze_project(root, palace)?;
+        palace.resolve_pending_calls();
+
+        let mut hashes = arbor_persist::hasher::FileHashes::new();
+        for path in palace.file_paths() {
+            let _ = hashes.check_file(path);
+        }
+        hashes.save(root)?;
+        Ok(0)
+    }
+
+    /// Incremental update — only re-analyze changed/new/deleted files.
+    fn incremental_update(
+        root: &Path,
+        registry: &AnalyzerRegistry,
+        facets: &[arbor_detect::ProjectFacet],
+        palace: &mut Palace,
+    ) -> anyhow::Result<usize> {
+        let mut hashes = arbor_persist::hasher::FileHashes::load(root).unwrap_or_default();
+
+        let current_files: std::collections::HashSet<PathBuf> =
+            palace.file_paths().map(Path::to_path_buf).collect();
+
+        // Remove deleted files
+        let tracked: Vec<PathBuf> = hashes
+            .tracked_files()
+            .map(std::path::Path::to_path_buf)
+            .collect();
+        for path in &tracked {
+            if !path.exists() {
+                palace.remove_file(path);
+                hashes.remove_file(path);
+            }
+        }
+
+        // Collect modified files
+        let mut changed_files = Vec::new();
+        for path in &current_files {
+            if let Ok(
+                arbor_persist::hasher::FileStatus::New
+                | arbor_persist::hasher::FileStatus::Modified,
+            ) = hashes.check_file(path)
+            {
+                palace.remove_file(path);
+                changed_files.push(path.clone());
+            }
+        }
+
+        // Collect newly created files (not yet in cache)
+        let all_files = arbor_persist::watcher::walk_files(root);
+        for path in &all_files {
+            if !current_files.contains(path)
+                && matches!(
+                    hashes.check_file(path),
+                    Ok(arbor_persist::hasher::FileStatus::New)
+                )
+            {
+                changed_files.push(path.clone());
+            }
+        }
+
+        let count = changed_files.len();
+        let mut errors = 0usize;
+        for path in &changed_files {
+            match std::fs::read_to_string(path) {
+                Ok(source) => {
+                    for analyzer in registry.for_facets(facets) {
+                        if let Err(e) = analyzer.analyze_file(path, &source, palace) {
+                            eprintln!("Arbor: failed to analyze {}: {e}", path.display());
+                            errors += 1;
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Arbor: failed to read {}: {e}", path.display());
+                    errors += 1;
+                }
+            }
+        }
+        if errors > 0 {
+            eprintln!("Arbor: {errors} file(s) had errors during incremental update");
+        }
+
+        palace.resolve_pending_calls();
+        hashes.save(root)?;
+        Ok(count)
     }
 
     fn project_name(&self) -> &str {
@@ -273,11 +286,7 @@ impl ArborServer {
         // Filter out File nodes (line 0 noise)
         let refs: Vec<_> = refs
             .into_iter()
-            .filter(|r| {
-                palace
-                    .get_node(r.node)
-                    .is_some_and(|n| !matches!(n.kind, arbor_core::graph::NodeKind::File))
-            })
+            .filter(|r| palace.is_real_symbol(r.node))
             .collect();
 
         let mut out = format!(
@@ -289,7 +298,7 @@ impl ArborServer {
             if let Some(node) = palace.get_node(r.node) {
                 let _ = writeln!(
                     out,
-                    "  {:?} in {} ({}:{})",
+                    "  {} in {} ({}:{})",
                     r.kind,
                     node.name,
                     node.file.display(),
@@ -334,20 +343,16 @@ impl ArborServer {
         };
         let deps: Vec<_> = deps
             .into_iter()
-            .filter(|(idx, _)| {
-                palace
-                    .get_node(*idx)
-                    .is_some_and(|n| !matches!(n.kind, arbor_core::graph::NodeKind::File))
-            })
+            .filter(|(idx, _)| palace.is_real_symbol(*idx))
             .collect();
 
         let mut out = format!("{dir_label} '{}' ({} found):\n", node.name, deps.len());
         for (dep_idx, depth) in &deps {
             if let Some(dep) = palace.get_node(*dep_idx) {
-                let kind = dep.kind.label();
                 let _ = writeln!(
                     out,
-                    "  [depth {depth}] {kind} {} ({}:{})",
+                    "  [depth {depth}] {} {} ({}:{})",
+                    dep.kind.label(),
                     dep.name,
                     dep.file.display(),
                     dep.span.start_line
@@ -373,11 +378,7 @@ impl ArborServer {
 
         let impacts: Vec<_> = impacts
             .into_iter()
-            .filter(|(idx, _)| {
-                palace
-                    .get_node(*idx)
-                    .is_some_and(|n| !matches!(n.kind, arbor_core::graph::NodeKind::File))
-            })
+            .filter(|(idx, _)| palace.is_real_symbol(*idx))
             .collect();
 
         let Some(node) = palace.get_node(node_idx) else {
@@ -452,7 +453,9 @@ impl ArborServer {
         };
         match registry.analyze_project(&self.root, &mut palace) {
             Ok(facets) => {
-                let _ = arbor_persist::store::save(&palace, &self.root);
+                if let Err(e) = arbor_persist::store::save(&palace, &self.root) {
+                    eprintln!("Arbor: failed to save index: {e}");
+                }
                 let stats = palace.stats();
                 drop(palace);
                 // Rebuild file hashes (no lock needed)
@@ -460,7 +463,9 @@ impl ArborServer {
                 for path in arbor_persist::watcher::walk_files(&self.root) {
                     let _ = hashes.check_file(&path);
                 }
-                let _ = hashes.save(&self.root);
+                if let Err(e) = hashes.save(&self.root) {
+                    eprintln!("Arbor: failed to save file hashes: {e}");
+                }
                 format!(
                     "Re-indexed: {} files, {} fn, {} structs, {} enums, {} traits | Facets: {}",
                     stats.files,

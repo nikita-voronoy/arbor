@@ -5,6 +5,7 @@ use petgraph::stable_graph::NodeIndex;
 use petgraph::visit::EdgeRef;
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::collections::VecDeque;
+use std::fmt;
 use std::path::Path;
 
 /// Result of a references query
@@ -22,6 +23,19 @@ pub enum ReferenceKind {
     TypeReference,
     Implementation,
     Other,
+}
+
+impl fmt::Display for ReferenceKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Definition => f.write_str("Definition"),
+            Self::Call => f.write_str("Call"),
+            Self::Import => f.write_str("Import"),
+            Self::TypeReference => f.write_str("TypeRef"),
+            Self::Implementation => f.write_str("Impl"),
+            Self::Other => f.write_str("Ref"),
+        }
+    }
 }
 
 impl Palace {

@@ -114,6 +114,13 @@ impl Palace {
         self.graph.node_weights()
     }
 
+    /// Check if a node is a real symbol (not a File-level node).
+    #[must_use]
+    pub fn is_real_symbol(&self, idx: NodeIndex) -> bool {
+        self.get_node(idx)
+            .is_some_and(|n| !matches!(n.kind, NodeKind::File))
+    }
+
     /// Iterate over all indexed file paths
     pub fn file_paths(&self) -> impl Iterator<Item = &Path> {
         self.file_index.keys().map(PathBuf::as_path)
