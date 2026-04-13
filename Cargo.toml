@@ -19,3 +19,15 @@ rustc-hash = "2"
 lto = "fat"
 codegen-units = 1
 
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+# Intentional allows — documented reasons
+module_name_repetitions = "allow"    # CodeAnalyzer in code.rs is fine
+cast_possible_truncation = "allow"   # tree-sitter positions are always small
+struct_field_names = "allow"         # NodeQueries fields share suffix by design
+unused_self = "allow"                # analyzer methods may use self in future
+self_only_used_in_recursion = "allow" # recursive tree walkers pass &self through
+too_many_lines = "allow"
+

@@ -10,7 +10,8 @@ use crate::Analyzer;
 pub struct DocsAnalyzer;
 
 impl DocsAnalyzer {
-    pub fn new() -> Self {
+    #[must_use]
+    pub const fn new() -> Self {
         Self
     }
 
@@ -21,14 +22,13 @@ impl DocsAnalyzer {
             .git_global(true)
             .git_exclude(true)
             .build()
-            .filter_map(|entry| entry.ok())
-            .filter(|entry| entry.file_type().map(|ft| ft.is_file()).unwrap_or(false))
-            .map(|entry| entry.into_path())
+            .filter_map(std::result::Result::ok)
+            .filter(|entry| entry.file_type().is_some_and(|ft| ft.is_file()))
+            .map(ignore::DirEntry::into_path)
             .filter(|path| {
                 path.extension()
                     .and_then(|e| e.to_str())
-                    .map(|ext| ext == "md" || ext == "mdx" || ext == "rst")
-                    .unwrap_or(false)
+                    .is_some_and(|ext| ext == "md" || ext == "mdx" || ext == "rst")
             })
             .collect()
     }
@@ -73,7 +73,7 @@ impl DocsAnalyzer {
                         HeadingLevel::H5 => 5,
                         HeadingLevel::H6 => 6,
                     };
-                    current_heading = Some(format!("h{}", level_num));
+                    current_heading = Some(format!("h{level_num}"));
                 }
                 Event::Text(text) if in_heading => {
                     heading_text.push_str(&text);
@@ -96,15 +96,11 @@ impl DocsAnalyzer {
                         let section_idx = palace.add_node(section_node);
 
                         // Pop stack until we find a parent with lower level
-                        while heading_stack
-                            .last()
-                            .map(|(_, l)| *l >= level)
-                            .unwrap_or(false)
-                        {
+                        while heading_stack.last().is_some_and(|(_, l)| *l >= level) {
                             heading_stack.pop();
                         }
 
-                        let parent = heading_stack.last().map(|(idx, _)| *idx).unwrap_or(doc_idx);
+                        let parent = heading_stack.last().map_or(doc_idx, |(idx, _)| *idx);
                         palace.add_edge(parent, section_idx, EdgeKind::Contains);
                         heading_stack.push((section_idx, level));
                     }

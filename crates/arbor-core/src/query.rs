@@ -27,6 +27,7 @@ pub enum ReferenceKind {
 impl Palace {
     /// Find all references to a symbol by name.
     /// Only counts the first occurrence per file as Definition, the rest as Other.
+    #[must_use]
     pub fn references(&self, symbol: &str) -> Vec<Reference> {
         let mut results = Vec::new();
         let mut seen_def_files: FxHashSet<&Path> = FxHashSet::default();
@@ -80,11 +81,13 @@ impl Palace {
     }
 
     /// Get transitive dependencies of a node (outgoing)
+    #[must_use]
     pub fn dependencies(&self, start: NodeIndex, max_depth: usize) -> Vec<(NodeIndex, usize)> {
         self.traverse(start, Direction::Outgoing, max_depth)
     }
 
     /// Get transitive dependents of a node (incoming) — "what breaks if I change this"
+    #[must_use]
     pub fn impact(&self, start: NodeIndex, max_depth: usize) -> Vec<(NodeIndex, usize)> {
         self.traverse(start, Direction::Incoming, max_depth)
     }
@@ -122,6 +125,7 @@ impl Palace {
 
     /// Fuzzy search symbols by name substring.
     /// Deduplicates by (name, kind) — returns one result per unique symbol, not per occurrence.
+    #[must_use]
     pub fn search(&self, query: &str) -> Vec<NodeIndex> {
         let query_lower = query.to_lowercase();
 
@@ -166,23 +170,22 @@ impl Palace {
     }
 
     /// Find the "primary" definition node for a symbol — the first real definition found
+    #[must_use]
     pub fn find_primary(&self, symbol: &str) -> Option<NodeIndex> {
         self.find_by_name(symbol).iter().copied().find(|&idx| {
-            self.get_node(idx)
-                .map(|n| {
-                    matches!(
-                        n.kind,
-                        NodeKind::Function
-                            | NodeKind::Struct
-                            | NodeKind::Trait
-                            | NodeKind::Enum
-                            | NodeKind::EnumVariant
-                            | NodeKind::Table
-                            | NodeKind::Message
-                            | NodeKind::Macro
-                    )
-                })
-                .unwrap_or(false)
+            self.get_node(idx).is_some_and(|n| {
+                matches!(
+                    n.kind,
+                    NodeKind::Function
+                        | NodeKind::Struct
+                        | NodeKind::Trait
+                        | NodeKind::Enum
+                        | NodeKind::EnumVariant
+                        | NodeKind::Table
+                        | NodeKind::Message
+                        | NodeKind::Macro
+                )
+            })
         })
     }
 }

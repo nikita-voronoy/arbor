@@ -4,6 +4,7 @@ use petgraph::visit::{EdgeRef, IntoEdgeReferences};
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fmt::Write;
 use std::path::{Path, PathBuf};
 
 /// A Wing represents a project or repository
@@ -46,12 +47,13 @@ pub struct Palace {
     pub file_index: FxHashMap<PathBuf, Vec<NodeIndex>>,
     /// Map from symbol name to node indices (for fast lookup)
     pub name_index: FxHashMap<String, Vec<NodeIndex>>,
-    /// Pending call edges to resolve after all files are indexed (caller_idx, callee_name)
+    /// Pending call edges to resolve after all files are indexed (`caller_idx`, `callee_name`)
     #[serde(default)]
     pub pending_calls: Vec<(NodeIndex, String)>,
 }
 
 impl Palace {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             graph: CodeGraph::default(),
@@ -85,19 +87,18 @@ impl Palace {
     pub fn nodes_in_file(&self, path: &Path) -> &[NodeIndex] {
         self.file_index
             .get(path)
-            .map(|v| v.as_slice())
-            .unwrap_or(&[])
+            .map_or(&[], std::vec::Vec::as_slice)
     }
 
     /// Find nodes by name
     pub fn find_by_name(&self, name: &str) -> &[NodeIndex] {
         self.name_index
             .get(name)
-            .map(|v| v.as_slice())
-            .unwrap_or(&[])
+            .map_or(&[], std::vec::Vec::as_slice)
     }
 
     /// Get a node by index
+    #[must_use]
     pub fn get_node(&self, idx: NodeIndex) -> Option<&Node> {
         self.graph.node_weight(idx)
     }
@@ -109,12 +110,12 @@ impl Palace {
 
     /// Resolve all pending call edges. Call this after all files have been analyzed.
     pub fn resolve_pending_calls(&mut self) {
+        use rustc_hash::FxHashSet;
+
         let pending = std::mem::take(&mut self.pending_calls);
         if pending.is_empty() {
             return;
         }
-
-        use rustc_hash::FxHashSet;
 
         // Pre-collect existing call edges for O(1) dedup
         let mut added: FxHashSet<(NodeIndex, NodeIndex)> = self
@@ -160,6 +161,7 @@ impl Palace {
     }
 
     /// Get total counts for boot screen
+    #[must_use]
     pub fn stats(&self) -> PalaceStats {
         let mut stats = PalaceStats::default();
         for node in self.graph.node_weights() {
@@ -194,7 +196,7 @@ impl Palace {
         &mut self,
         name: impl Into<String>,
         root: impl Into<PathBuf>,
-        other: &Palace,
+        other: &Self,
     ) -> usize {
         let wing_idx = self.add_wing(name, root);
 
@@ -223,11 +225,24 @@ impl Palace {
 
     /// Auto-discover tunnels between wings by matching symbol names
     pub fn discover_tunnels(&mut self) {
+        type WingEntry = (NodeIndex, NodeKind, usize);
+
+        const fn is_tunnel_pair(a: NodeKind, b: NodeKind) -> bool {
+            matches!(
+                (a, b),
+                (
+                    NodeKind::Struct | NodeKind::Message | NodeKind::Table,
+                    NodeKind::Struct
+                ) | (NodeKind::Trait, NodeKind::Trait)
+                    | (NodeKind::Enum, NodeKind::Enum)
+                    | (NodeKind::Message | NodeKind::Struct, NodeKind::Message)
+                    | (NodeKind::Table | NodeKind::Struct, NodeKind::Table)
+            )
+        }
+
         if self.wings.len() < 2 {
             return;
         }
-
-        type WingEntry = (NodeIndex, NodeKind, usize);
 
         // Phase 1: collect node info per wing, indexed by name for O(N) matching
         let wing_nodes: Vec<FxHashMap<&str, Vec<WingEntry>>> = self
@@ -254,21 +269,6 @@ impl Palace {
                 by_name
             })
             .collect();
-
-        fn is_tunnel_pair(a: NodeKind, b: NodeKind) -> bool {
-            matches!(
-                (a, b),
-                (NodeKind::Struct, NodeKind::Struct)
-                    | (NodeKind::Trait, NodeKind::Trait)
-                    | (NodeKind::Enum, NodeKind::Enum)
-                    | (NodeKind::Message, NodeKind::Message)
-                    | (NodeKind::Table, NodeKind::Table)
-                    | (NodeKind::Struct, NodeKind::Message)
-                    | (NodeKind::Message, NodeKind::Struct)
-                    | (NodeKind::Struct, NodeKind::Table)
-                    | (NodeKind::Table, NodeKind::Struct)
-            )
-        }
 
         // Phase 2: intersect by name across wing pairs
         let mut new_tunnels: Vec<Tunnel> = Vec::new();
@@ -299,7 +299,7 @@ impl Palace {
                                         to_wing,
                                         from_node,
                                         to_node,
-                                        reason: format!("shared type: {}", name),
+                                        reason: format!("shared type: {name}"),
                                     });
                                     new_edges.push((from_node, to_node));
                                 }
@@ -318,6 +318,7 @@ impl Palace {
     }
 
     /// Format tunnels for display
+    #[must_use]
     pub fn format_tunnels(&self) -> String {
         if self.tunnels.is_empty() {
             return "No cross-project tunnels found.".to_string();
@@ -328,21 +329,19 @@ impl Palace {
             let from_wing = self
                 .wings
                 .get(tunnel.from_wing)
-                .map(|w| w.name.as_str())
-                .unwrap_or("?");
+                .map_or("?", |w| w.name.as_str());
             let to_wing = self
                 .wings
                 .get(tunnel.to_wing)
-                .map(|w| w.name.as_str())
-                .unwrap_or("?");
+                .map_or("?", |w| w.name.as_str());
             let from_name = self
                 .get_node(tunnel.from_node)
-                .map(|n| n.name.as_str())
-                .unwrap_or("?");
-            out.push_str(&format!(
-                "  {} ←→ {} [{}] ({})\n",
-                from_wing, to_wing, from_name, tunnel.reason
-            ));
+                .map_or("?", |n| n.name.as_str());
+            let _ = writeln!(
+                out,
+                "  {from_wing} ←→ {to_wing} [{from_name}] ({})",
+                tunnel.reason
+            );
         }
         out
     }

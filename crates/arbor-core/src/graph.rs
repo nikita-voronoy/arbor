@@ -99,19 +99,22 @@ impl Node {
         }
     }
 
+    #[must_use]
     pub fn with_signature(mut self, sig: impl Into<String>) -> Self {
         self.signature = Some(sig.into());
         self
     }
 
-    pub fn with_visibility(mut self, vis: Visibility) -> Self {
+    #[must_use]
+    pub const fn with_visibility(mut self, vis: Visibility) -> Self {
         self.visibility = vis;
         self
     }
 }
 
 impl Span {
-    pub fn new(start_line: u32, end_line: u32, start_col: u32, end_col: u32) -> Self {
+    #[must_use]
+    pub const fn new(start_line: u32, end_line: u32, start_col: u32, end_col: u32) -> Self {
         Self {
             start_line,
             end_line,
@@ -120,7 +123,8 @@ impl Span {
         }
     }
 
-    pub fn lines(&self) -> u32 {
+    #[must_use]
+    pub const fn lines(&self) -> u32 {
         self.end_line.saturating_sub(self.start_line) + 1
     }
 }

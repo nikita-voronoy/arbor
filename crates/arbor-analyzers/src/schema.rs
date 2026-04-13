@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use crate::Analyzer;
 
-/// Analyzer for schema files: SQL migrations, protobuf, OpenAPI
+/// Analyzer for schema files: SQL migrations, protobuf, `OpenAPI`
 pub struct SchemaAnalyzer {
     // SQL patterns
     create_table_re: Regex,
@@ -16,6 +16,9 @@ pub struct SchemaAnalyzer {
 }
 
 impl SchemaAnalyzer {
+    /// # Panics
+    /// Panics if the built-in SQL regexes are invalid (should never happen).
+    #[must_use]
     pub fn new() -> Self {
         Self {
             create_table_re: Regex::new(r"(?i)CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)").unwrap(),
@@ -53,7 +56,7 @@ impl SchemaAnalyzer {
                     Span::new(line_num, line_num, 0, 0),
                 )
                 .with_visibility(Visibility::Public)
-                .with_signature(format!("CREATE TABLE {}", table_name));
+                .with_signature(format!("CREATE TABLE {table_name}"));
                 let table_idx = palace.add_node(table_node);
                 palace.add_edge(file_idx, table_idx, EdgeKind::Contains);
                 current_table = Some((table_idx, table_name.clone()));
@@ -71,7 +74,7 @@ impl SchemaAnalyzer {
                         path,
                         Span::new(line_num, line_num, 0, 0),
                     )
-                    .with_signature(format!("{} {}", col_name, col_type));
+                    .with_signature(format!("{col_name} {col_type}"));
                     let col_idx = palace.add_node(col_node);
                     palace.add_edge(*table_idx, col_idx, EdgeKind::Contains);
 
@@ -266,9 +269,9 @@ impl SchemaAnalyzer {
             .git_global(true)
             .git_exclude(true)
             .build()
-            .filter_map(|entry| entry.ok())
-            .filter(|entry| entry.file_type().map(|ft| ft.is_file()).unwrap_or(false))
-            .map(|entry| entry.into_path())
+            .filter_map(std::result::Result::ok)
+            .filter(|entry| entry.file_type().is_some_and(|ft| ft.is_file()))
+            .map(ignore::DirEntry::into_path)
             .collect();
 
         for path in files {
@@ -286,7 +289,7 @@ impl SchemaAnalyzer {
             "sql" => self.parse_sql(path, palace)?,
             "proto" => self.parse_protobuf(path, palace)?,
             "yml" | "yaml" if name.contains("openapi") || name.contains("swagger") => {
-                self.parse_openapi(path, palace)?
+                self.parse_openapi(path, palace)?;
             }
             "json" if name.contains("openapi") || name.contains("swagger") => {
                 // JSON OpenAPI — would need serde_json, skip for now

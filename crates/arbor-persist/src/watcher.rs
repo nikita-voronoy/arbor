@@ -16,8 +16,11 @@ pub enum WatchEvent {
 }
 
 /// Start watching a directory for file changes.
-/// Returns a receiver that emits WatchEvents.
+/// Returns a receiver that emits `WatchEvents`.
 /// The watcher respects .gitignore rules.
+///
+/// # Errors
+/// Returns an error if the file watcher cannot be created or the directory cannot be watched.
 pub fn watch(root: &Path) -> Result<(mpsc::Receiver<WatchEvent>, impl Drop)> {
     let (tx, rx) = mpsc::channel();
     let root_owned = root.to_path_buf();
@@ -25,9 +28,8 @@ pub fn watch(root: &Path) -> Result<(mpsc::Receiver<WatchEvent>, impl Drop)> {
     let mut debouncer = new_debouncer(
         Duration::from_millis(500),
         move |events: Result<Vec<notify_debouncer_mini::DebouncedEvent>, notify::Error>| {
-            let events = match events {
-                Ok(e) => e,
-                Err(_) => return,
+            let Ok(events) = events else {
+                return;
             };
 
             let mut changed = Vec::new();
@@ -98,8 +100,8 @@ pub fn walk_files(root: &Path) -> Vec<PathBuf> {
         .git_global(true)
         .git_exclude(true)
         .build()
-        .filter_map(|entry| entry.ok())
-        .filter(|entry| entry.file_type().map(|ft| ft.is_file()).unwrap_or(false))
-        .map(|entry| entry.into_path())
+        .filter_map(std::result::Result::ok)
+        .filter(|entry| entry.file_type().is_some_and(|ft| ft.is_file()))
+        .map(ignore::DirEntry::into_path)
         .collect()
 }

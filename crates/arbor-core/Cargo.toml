@@ -9,3 +9,6 @@ serde_json = { workspace = true }
 anyhow = { workspace = true }
 petgraph = { workspace = true }
 rustc-hash = { workspace = true }
+
+[lints]
+workspace = true
