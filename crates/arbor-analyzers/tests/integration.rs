@@ -812,6 +812,166 @@ fn csharp_search() {
 }
 
 // ============================================================
+//  KOTLIN PROJECT
+// ============================================================
+
+#[test]
+fn kotlin_detect() {
+    let (_, facets) = analyze("kotlin-project");
+    assert!(facets.contains(&ProjectFacet::Kotlin));
+}
+
+#[test]
+fn kotlin_classes() {
+    let (p, _) = analyze("kotlin-project");
+    for name in ["User", "Session", "AuthService"] {
+        assert!(
+            find_kind(&p, name, NodeKind::Struct).is_some(),
+            "should find Kotlin class: {name}"
+        );
+    }
+}
+
+#[test]
+fn kotlin_data_classes() {
+    let (p, _) = analyze("kotlin-project");
+    // Data classes are still indexed as Struct
+    assert!(
+        find_kind(&p, "User", NodeKind::Struct).is_some(),
+        "data class User should be indexed as Struct"
+    );
+    assert!(
+        find_kind(&p, "InvalidCredentials", NodeKind::Struct).is_some(),
+        "data class InvalidCredentials should be indexed as Struct"
+    );
+}
+
+#[test]
+fn kotlin_sealed_classes() {
+    let (p, _) = analyze("kotlin-project");
+    assert!(
+        find_kind(&p, "AuthError", NodeKind::Struct).is_some(),
+        "sealed class AuthError should be indexed as Struct"
+    );
+}
+
+#[test]
+fn kotlin_interfaces() {
+    let (p, _) = analyze("kotlin-project");
+    assert!(
+        find_kind(&p, "AuthProvider", NodeKind::Trait).is_some(),
+        "should find Kotlin interface as Trait"
+    );
+}
+
+#[test]
+fn kotlin_enums() {
+    let (p, _) = analyze("kotlin-project");
+    assert!(
+        find_kind(&p, "Role", NodeKind::Enum).is_some(),
+        "should find Kotlin enum class"
+    );
+    for variant in ["ADMIN", "EDITOR", "VIEWER", "GUEST"] {
+        assert!(
+            find_kind(&p, variant, NodeKind::EnumVariant).is_some(),
+            "should find enum entry: {variant}"
+        );
+    }
+}
+
+#[test]
+fn kotlin_objects() {
+    let (p, _) = analyze("kotlin-project");
+    // object declarations are indexed as Struct
+    assert!(
+        find_kind(&p, "AppConfig", NodeKind::Struct).is_some(),
+        "object AppConfig should be indexed as Struct"
+    );
+    // Sealed class object members
+    assert!(
+        find_kind(&p, "UserNotFound", NodeKind::Struct).is_some(),
+        "object UserNotFound should be indexed as Struct"
+    );
+}
+
+#[test]
+fn kotlin_functions() {
+    let (p, _) = analyze("kotlin-project");
+    for name in [
+        "main",
+        "authenticate",
+        "revoke",
+        "login",
+        "logout",
+        "findUser",
+        "verifyPassword",
+        "create",
+        "getTimeout",
+        "isValidEmail",
+    ] {
+        assert!(
+            find_fn(&p, name).is_some(),
+            "should find Kotlin function: {name}"
+        );
+    }
+}
+
+#[test]
+fn kotlin_visibility() {
+    let (p, _) = analyze("kotlin-project");
+    let login = find_fn(&p, "login").unwrap();
+    assert_eq!(
+        login.visibility,
+        Visibility::Public,
+        "login should be public (Kotlin default)"
+    );
+    let find = find_fn(&p, "findUser").unwrap();
+    assert_eq!(
+        find.visibility,
+        Visibility::Private,
+        "findUser should be private"
+    );
+    let verify = find_fn(&p, "verifyPassword").unwrap();
+    assert_eq!(
+        verify.visibility,
+        Visibility::Crate,
+        "verifyPassword should be internal (Crate)"
+    );
+}
+
+#[test]
+fn kotlin_signatures() {
+    let (p, _) = analyze("kotlin-project");
+    let login = find_fn(&p, "login").unwrap();
+    let sig = login.signature.as_deref().unwrap();
+    assert!(sig.contains("username"), "sig should contain param: {sig}");
+    assert!(
+        sig.contains("User?"),
+        "sig should contain return type: {sig}"
+    );
+}
+
+#[test]
+fn kotlin_call_graph() {
+    let (p, _) = analyze("kotlin-project");
+    let refs = p.references("login");
+    assert!(
+        refs.iter().any(|r| matches!(r.kind, ReferenceKind::Call)),
+        "main should call login"
+    );
+}
+
+#[test]
+fn kotlin_search() {
+    let (p, _) = analyze("kotlin-project");
+    let results = p.search("Auth");
+    assert!(
+        !results.is_empty(),
+        "should find AuthService/AuthProvider/AuthError by substring"
+    );
+}
+
+// ============================================================
 //  MIXED PROJECT (Rust + Ansible + Docs)
 // ============================================================
 

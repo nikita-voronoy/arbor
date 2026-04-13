@@ -201,6 +201,25 @@ impl CodeAnalyzer {
         );
 
         languages.insert(
+            "kotlin",
+            LanguageConfig {
+                language: tree_sitter_kotlin_ng::LANGUAGE.into(),
+                extensions: &["kt", "kts"],
+                queries: NodeQueries {
+                    function: &["function_declaration"],
+                    struct_like: &["class_declaration", "object_declaration"],
+                    trait_like: &[], // interfaces are class_declaration with "interface" keyword — handled in walk_tree
+                    impl_block: &[],
+                    enum_def: &[], // enums are class_declaration with "enum" modifier — handled in walk_tree
+                    enum_variant: &["enum_entry"],
+                    macro_def: &[],
+                    use_decl: &["import"],
+                    call_expr: &["call_expression"],
+                },
+            },
+        );
+
+        languages.insert(
             "csharp",
             LanguageConfig {
                 language: tree_sitter_c_sharp::LANGUAGE.into(),
@@ -304,17 +323,31 @@ impl CodeAnalyzer {
         let ts_node = cursor.node();
         let kind = ts_node.kind();
 
+        // Kotlin: class_declaration is used for classes, interfaces, and enums.
+        // Distinguish by looking for "interface" keyword child or "enum" modifier.
         let node_kind = if config.queries.function.contains(&kind) {
             Some(NodeKind::Function)
+        } else if kind == "class_declaration" && Self::has_child_keyword(&ts_node, "interface") {
+            Some(NodeKind::Trait)
+        } else if kind == "class_declaration" && Self::has_modifier(&ts_node, source, "enum") {
+            Some(NodeKind::Enum)
         } else if config.queries.struct_like.contains(&kind) {
             // C/C++: only index struct/class definitions (with a body), not forward decls or type references
             // struct foo { ... } → has field_declaration_list or declaration_list → definition
             // struct foo *bar   → no body → skip (type reference, not definition)
-            let has_body = ts_node.child_by_field_name("body").is_some()
+            // Kotlin: object_declaration is always a definition
+            let is_kotlin_object = kind == "object_declaration";
+            let has_body = is_kotlin_object
+                || ts_node.child_by_field_name("body").is_some()
                 || (0..ts_node.child_count()).any(|i| {
                     ts_node.child(i).is_some_and(|c| {
                         let ck = c.kind();
-                        ck == "field_declaration_list" || ck == "declaration_list"
+                        ck == "field_declaration_list"
+                            || ck == "declaration_list"
+                            // Kotlin: class_body, enum_class_body, primary_constructor all indicate a definition
+                            || ck == "class_body"
+                            || ck == "enum_class_body"
+                            || ck == "primary_constructor"
                     })
                 });
             if has_body {
@@ -428,6 +461,45 @@ impl CodeAnalyzer {
             }
             cursor.goto_parent();
         }
+    }
+
+    /// Check if a node has a direct child with the given keyword kind (e.g. "interface")
+    fn has_child_keyword(node: &tree_sitter::Node, keyword: &str) -> bool {
+        for i in 0..node.child_count() {
+            if let Some(child) = node.child(i)
+                && child.kind() == keyword
+            {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Check if a node has a modifier with a specific keyword (e.g. "enum", "data", "sealed")
+    fn has_modifier(node: &tree_sitter::Node, source: &[u8], modifier: &str) -> bool {
+        for i in 0..node.child_count() {
+            if let Some(child) = node.child(i)
+                && child.kind() == "modifiers"
+            {
+                for j in 0..child.child_count() {
+                    if let Some(mod_node) = child.child(j) {
+                        // Check modifier children (class_modifier, visibility_modifier, etc.)
+                        for k in 0..mod_node.child_count() {
+                            if let Some(inner) = mod_node.child(k)
+                                && inner.utf8_text(source).unwrap_or("") == modifier
+                            {
+                                return true;
+                            }
+                        }
+                        // Also check the modifier node itself
+                        if mod_node.utf8_text(source).unwrap_or("") == modifier {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        false
     }
 
     fn extract_name(node: &tree_sitter::Node, source: &[u8]) -> String {
@@ -553,6 +625,34 @@ impl CodeAnalyzer {
             return Some(sig.to_string());
         }
 
+        // Kotlin: function_declaration → everything before function_body child
+        // (Only Kotlin's grammar uses "function_body" as child kind here;
+        //  TS/Go use "statement_block"/"block" so this won't match for them.)
+        if kind == "function_declaration" {
+            if let Some(body) = node
+                .children(&mut node.walk())
+                .find(|c| c.kind() == "function_body")
+            {
+                let start = node.start_byte();
+                let end = body.start_byte();
+                let sig = std::str::from_utf8(&source[start..end])
+                    .unwrap_or("")
+                    .trim();
+                if sig.len() > 200 {
+                    return Some(format!("{}...", &sig[..200]));
+                }
+                return Some(sig.to_string());
+            }
+            // Kotlin: abstract / interface function with no body — whole node is the signature
+            if node.children(&mut node.walk()).any(|c| c.kind() == "fun") {
+                let sig = node.utf8_text(source).unwrap_or("").trim();
+                if sig.len() > 200 {
+                    return Some(format!("{}...", &sig[..200]));
+                }
+                return Some(sig.to_string());
+            }
+        }
+
         None
     }
 
@@ -606,12 +706,53 @@ impl CodeAnalyzer {
                         return Visibility::Private;
                     }
                 }
+                // Kotlin: modifiers → visibility_modifier → public/private/internal/protected
+                if ck == "modifiers" {
+                    for j in 0..child.child_count() {
+                        if let Some(mod_child) = child.child(j)
+                            && mod_child.kind() == "visibility_modifier"
+                        {
+                            let text = mod_child.utf8_text(source).unwrap_or("");
+                            if text.contains("public") {
+                                return Visibility::Public;
+                            }
+                            if text.contains("internal") {
+                                return Visibility::Crate;
+                            }
+                            if text.contains("private") || text.contains("protected") {
+                                return Visibility::Private;
+                            }
+                        }
+                    }
+                }
             }
         }
         // C default: non-static functions are public (visible across TUs)
         let kind = node.kind();
         if kind == "function_definition" || kind == "struct_specifier" || kind == "enum_specifier" {
             return Visibility::Public;
+        }
+        // Kotlin default: everything is public unless explicitly marked otherwise
+        if kind == "function_declaration"
+            || kind == "class_declaration"
+            || kind == "object_declaration"
+            || kind == "companion_object"
+            || kind == "property_declaration"
+        {
+            // Only apply this default for Kotlin files — check for "fun" keyword
+            // (Kotlin function_declaration has "fun" child; other langs don't)
+            let is_kotlin = node.children(&mut node.walk()).any(|c| {
+                let ck = c.kind();
+                ck == "fun"
+                    || ck == "class"
+                    || ck == "interface"
+                    || ck == "object"
+                    || ck == "val"
+                    || ck == "var"
+            });
+            if is_kotlin {
+                return Visibility::Public;
+            }
         }
         Visibility::Private
     }
@@ -638,10 +779,20 @@ impl CodeAnalyzer {
 
         if config.queries.call_expr.contains(&node.kind()) {
             // Extract the function name from the call
-            if let Some(func_node) = node.child_by_field_name("function") {
+            // Most languages use a "function" field; Kotlin uses the first child directly
+            let func_node = node
+                .child_by_field_name("function")
+                .or_else(|| node.child(0));
+            if let Some(func_node) = func_node {
                 let call_name = func_node.utf8_text(source).unwrap_or("").to_string();
-                // Extract just the last segment (e.g., "foo::bar" → "bar")
-                let short_name = call_name.rsplit("::").next().unwrap_or(&call_name);
+                // Extract just the last segment (e.g., "foo::bar" → "bar", "auth.login" → "login")
+                let short_name = call_name
+                    .rsplit("::")
+                    .next()
+                    .unwrap_or(&call_name)
+                    .rsplit('.')
+                    .next()
+                    .unwrap_or(&call_name);
 
                 // Try to find the target in the graph
                 let targets: Vec<_> = palace.find_by_name(short_name).to_vec();
@@ -695,6 +846,7 @@ impl Analyzer for CodeAnalyzer {
                 | ProjectFacet::C
                 | ProjectFacet::Cpp
                 | ProjectFacet::CSharp
+                | ProjectFacet::Kotlin
         )
     }
 

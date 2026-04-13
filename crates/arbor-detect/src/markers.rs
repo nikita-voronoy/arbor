@@ -11,6 +11,7 @@ pub enum ProjectFacet {
     C,
     Cpp,
     CSharp,
+    Kotlin,
     Ansible,
     Terraform,
     Docker,
@@ -30,6 +31,7 @@ impl ProjectFacet {
             Self::C => "c",
             Self::Cpp => "cpp",
             Self::CSharp => "csharp",
+            Self::Kotlin => "kotlin",
             Self::Ansible => "ansible",
             Self::Terraform => "terraform",
             Self::Docker => "docker",
@@ -75,6 +77,15 @@ pub fn detect(root: &Path) -> Vec<ProjectFacet> {
         || has_extension_in_root(root, "hpp")
     {
         facets.push(ProjectFacet::Cpp);
+    }
+    if root.join("build.gradle.kts").exists()
+        || root.join("build.gradle").exists()
+        || has_extension_in_root(root, "kt")
+        || has_extension_in_root(root, "kts")
+        || has_extension_in_subdir(root, "kt")
+        || has_extension_in_subdir(&root.join("src"), "kt")
+    {
+        facets.push(ProjectFacet::Kotlin);
     }
     if has_extension_in_root(root, "sln")
         || has_extension_in_root(root, "csproj")
