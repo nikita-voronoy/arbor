@@ -8,9 +8,7 @@ on:
       - "tests/**"
       - "Cargo.toml"
       - "Cargo.lock"
-      - "install.*"
-      - "uninstall.*"
-      - "test_install.*"
+      - "scripts/**"
   pull_request:
     branches: [main]
 
@@ -43,9 +41,7 @@ jobs:
               - 'Cargo.toml'
               - 'Cargo.lock'
             installer:
-              - 'install.*'
-              - 'uninstall.*'
-              - 'test_install.*'
+              - 'scripts/**'
 
   # Conventional commits — only on PRs
   lint-pr:
@@ -109,7 +105,7 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get -qq install -y jq
       - name: Run installer tests
-        run: bash test_install.sh
+        run: bash scripts/test_install.sh
 
   # Installer tests — PowerShell (Windows)
   installer-pwsh:
@@ -122,4 +118,4 @@ jobs:
       - uses: actions/checkout@v4
       - name: Run installer tests
         shell: pwsh
-        run: ./test_install.ps1
+        run: ./scripts/test_install.ps1
