@@ -1186,6 +1186,12 @@ fn rust_implements_edges() {
         "Analyzer trait should have >=4 implementations, got {}",
         impls.len()
     );
+    // Impl nodes should be named after the implementing type, not the trait
+    let impl_names: Vec<&str> = impls.iter().map(|n| n.name.as_str()).collect();
+    assert!(
+        impl_names.iter().all(|n| *n != "Analyzer"),
+        "impl names should be type names not trait names, got: {impl_names:?}"
+    );
 }
 
 #[test]

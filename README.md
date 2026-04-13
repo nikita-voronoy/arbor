@@ -39,7 +39,7 @@
 ## Highlights
 
 - **1M lines of code &rarr; 500 lines of context.** arbor builds a symbol graph with tree-sitter and compresses it into token-efficient summaries an LLM can actually use.
-- **13 surgical MCP tools.** The LLM sees architecture first, then drills into exactly what it needs &mdash; no grep noise, no wasted tokens.
+- **14 surgical MCP tools.** The LLM sees architecture first, then drills into exactly what it needs &mdash; no grep noise, no wasted tokens.
 - **Sub-second incremental re-index.** Only changed files are re-analyzed via content hashing. Cold index of a 1M LOC project takes under 10 seconds.
 - **15 languages and formats.** Rust, Python, TypeScript, Go, C/C++, C#, Kotlin, plus Terraform, Ansible, SQL, Protobuf, OpenAPI, and Markdown.
 - **Zero configuration.** One install command. No config files. Works with any project structure.
@@ -214,7 +214,7 @@ flowchart LR
 
 1. **Index** &mdash; tree-sitter parses source files into ASTs. arbor extracts functions, structs, traits, enums, calls, imports, and type references.
 2. **Persist** &mdash; the graph is saved to `.arbor/`. On re-index, only changed files are re-analyzed (xxh3 content hashing).
-3. **Serve** &mdash; 13 MCP tools let the LLM explore the graph at any granularity.
+3. **Serve** &mdash; 14 MCP tools let the LLM explore the graph at any granularity.
 4. **Resolve** &mdash; cross-file call edges are resolved in a second pass after all files are indexed.
 
 ## MCP Tools
@@ -229,6 +229,7 @@ flowchart LR
 | **`callers`** | Who calls this function? Filtered call-site list with file locations | varies |
 | **`summary`** | Rich single-file overview: all symbols, signatures, visibility, call edges | varies |
 | **`symbols`** | List all symbols of a kind (fn/struct/trait/enum) with optional public filter | varies |
+| **`implementations`** | Find all types implementing a given trait/interface (Rust, Java, C#, Kotlin, TS, Python) | varies |
 | **`references`** | All refs to a symbol: definitions, calls, imports, type refs, impls | varies |
 | **`dependencies`** | What does this symbol depend on? (transitive, configurable depth) | varies |
 | **`impact`** | What breaks if this symbol changes? (reverse dependency traversal) | varies |
@@ -298,7 +299,7 @@ graph TB
     subgraph arbor-mcp["arbor-mcp"]
         MCP["MCP server<br>(rmcp over stdio)"]
         CLI["CLI entry point"]
-        H["13 tool handlers"]
+        H["14 tool handlers"]
     end
 
     subgraph arbor-analyzers["arbor-analyzers"]

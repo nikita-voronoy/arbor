@@ -750,6 +750,17 @@ impl CodeAnalyzer {
                 .to_string();
         }
 
+        // Rust: impl_item → name is the implementing type, not the trait
+        // `impl Trait for Type` has "type" field = Type, "trait" field = Trait
+        if kind == "impl_item"
+            && let Some(type_node) = node.child_by_field_name("type")
+        {
+            return type_node
+                .utf8_text(source)
+                .unwrap_or("anonymous")
+                .to_string();
+        }
+
         // TS/JS: function_declaration, class_declaration → name field
         if let Some(name_node) = node.child_by_field_name("name") {
             return name_node
@@ -1018,7 +1029,8 @@ impl CodeAnalyzer {
         // Java: `class Foo extends Bar` → "superclass" field
         // C#: `class Foo : Bar, IBaz` → "base_list" child node (base_list)
         // Kotlin: `class Foo : Bar, Baz()` → "delegation_specifiers" child node
-        let interface_fields = ["interfaces", "superclass"];
+        // Python: `class Foo(Base):` → "superclasses" field
+        let interface_fields = ["interfaces", "superclass", "superclasses"];
         for field in &interface_fields {
             if let Some(list_node) = node.child_by_field_name(field) {
                 Self::collect_type_names_as_impls(&list_node, source, class_idx, palace);
@@ -1029,12 +1041,13 @@ impl CodeAnalyzer {
         for i in 0..node.child_count() {
             if let Some(child) = node.child(i) {
                 let ck = child.kind();
-                // Debug: show child kinds
                 if ck == "base_list"
                     || ck == "delegation_specifiers"
                     || ck == "delegation_specifier"
                     || ck == "super_interfaces"
                     || ck == "extends_interfaces"
+                    || ck == "extends_clause"
+                    || ck == "implements_clause"
                 {
                     Self::collect_type_names_as_impls(&child, source, class_idx, palace);
                 }
