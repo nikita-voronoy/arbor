@@ -266,6 +266,7 @@ arbor's MCP tools return structured, compressed output &mdash; dramatically fewe
 | C++ | ✓ | ✓ | — | ✓ | ✓ | ✓ |
 | C# | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Kotlin | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Java | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 <!-- LANGUAGES_TABLE:END -->
 
 <details>
