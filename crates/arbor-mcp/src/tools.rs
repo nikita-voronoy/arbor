@@ -789,3 +789,158 @@ impl ArborServer {
 
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for ArborServer {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use arbor_analyzers::AnalyzerRegistry;
+    use arbor_core::graph::{NodeKind, Visibility};
+    use std::path::PathBuf;
+
+    fn arbor_root() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
+    }
+
+    fn index_arbor() -> (Palace, PathBuf) {
+        let root = std::fs::canonicalize(arbor_root()).unwrap();
+        let mut palace = Palace::new();
+        let registry = AnalyzerRegistry::new().unwrap();
+        registry.analyze_project(&root, &mut palace).unwrap();
+        (palace, root)
+    }
+
+    #[test]
+    fn source_shows_function_code() {
+        let (palace, root) = index_arbor();
+        let idx = palace.find_primary("resolve_pending_calls").unwrap();
+        let output = ArborServer::read_symbol_source(&palace, &root, idx, 100);
+
+        assert!(
+            output.contains("resolve_pending_calls"),
+            "should contain function name"
+        );
+        assert!(output.contains("pending"), "should contain function body");
+        assert!(output.contains(" | "), "should have line numbers");
+    }
+
+    #[test]
+    fn source_shows_struct_code() {
+        let (palace, root) = index_arbor();
+        let idx = palace.find_primary("Palace").unwrap();
+        let output = ArborServer::read_symbol_source(&palace, &root, idx, 50);
+
+        assert!(output.contains("Palace"), "should show struct name");
+        assert!(output.contains("struct"), "header should show kind");
+    }
+
+    #[test]
+    fn source_respects_max_lines() {
+        let (palace, root) = index_arbor();
+        let idx = palace.find_primary("resolve_pending_calls").unwrap();
+        let output = ArborServer::read_symbol_source(&palace, &root, idx, 3);
+
+        assert!(
+            output.contains("truncated"),
+            "should truncate long functions"
+        );
+    }
+
+    #[test]
+    fn callers_of_add_node() {
+        let (palace, _root) = index_arbor();
+        let refs = palace.references("add_node");
+        let callers: Vec<_> = refs
+            .iter()
+            .filter(|r| matches!(r.kind, arbor_core::query::ReferenceKind::Call))
+            .filter_map(|r| palace.get_node(r.node))
+            .collect();
+
+        assert!(!callers.is_empty(), "add_node should have callers");
+        // walk_tree and various analyzers should call add_node
+        let caller_names: Vec<&str> = callers.iter().map(|n| n.name.as_str()).collect();
+        assert!(
+            caller_names.iter().any(|n| n.contains("walk")
+                || n.contains("parse")
+                || n.contains("analyze")
+                || n.contains("extract")
+                || n.contains("merge")),
+            "expected analyzer/walker callers, got: {caller_names:?}"
+        );
+    }
+
+    #[test]
+    fn summary_shows_file_symbols() {
+        let (palace, root) = index_arbor();
+        let path = root.join("crates/arbor-core/src/palace.rs");
+        let indices = palace.nodes_in_file(&path);
+        assert!(!indices.is_empty(), "palace.rs should have symbols");
+
+        let output = ArborServer::format_file_summary(&palace, &path, indices);
+
+        assert!(output.contains("Palace"), "should contain Palace struct");
+        assert!(output.contains("add_node"), "should contain add_node fn");
+        assert!(output.contains('L'), "should have line numbers");
+        assert!(output.contains("calls:"), "should show call relationships");
+    }
+
+    #[test]
+    fn summary_partial_path_match() {
+        let (palace, root) = index_arbor();
+        // Full path exists
+        let full = root.join("crates/arbor-core/src/palace.rs");
+        assert!(!palace.nodes_in_file(&full).is_empty());
+
+        // Partial path should also find it via file_paths iteration
+        let found = palace
+            .file_paths()
+            .find(|p| p.ends_with("arbor-core/src/palace.rs"));
+        assert!(found.is_some(), "partial path should match");
+    }
+
+    #[test]
+    fn symbols_lists_all_traits() {
+        let (palace, _root) = index_arbor();
+        let traits: Vec<_> = palace
+            .node_weights()
+            .filter(|n| n.kind == NodeKind::Trait && n.visibility == Visibility::Public)
+            .collect();
+
+        assert!(!traits.is_empty(), "should find public traits");
+        assert!(
+            traits.iter().any(|n| n.name == "Analyzer"),
+            "should find Analyzer trait"
+        );
+    }
+
+    #[test]
+    fn symbols_lists_public_structs() {
+        let (palace, _root) = index_arbor();
+        let structs: Vec<_> = palace
+            .node_weights()
+            .filter(|n| n.kind == NodeKind::Struct && n.visibility == Visibility::Public)
+            .collect();
+
+        assert!(
+            structs.len() >= 5,
+            "should find multiple public structs, got {}",
+            structs.len()
+        );
+        let names: Vec<&str> = structs.iter().map(|n| n.name.as_str()).collect();
+        assert!(names.contains(&"Palace"), "should find Palace");
+        assert!(names.contains(&"Node"), "should find Node");
+    }
+
+    #[test]
+    fn symbols_kind_filter_works() {
+        let (palace, _root) = index_arbor();
+        let enums: Vec<_> = palace
+            .node_weights()
+            .filter(|n| n.kind == NodeKind::Enum)
+            .collect();
+
+        assert!(!enums.is_empty(), "should find enums");
+        let names: Vec<&str> = enums.iter().map(|n| n.name.as_str()).collect();
+        assert!(names.contains(&"NodeKind"), "should find NodeKind enum");
+        assert!(names.contains(&"EdgeKind"), "should find EdgeKind enum");
+    }
+}
