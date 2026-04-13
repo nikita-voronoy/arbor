@@ -50,6 +50,9 @@ pub struct Palace {
     /// Pending call edges to resolve after all files are indexed (`caller_idx`, `callee_name`)
     #[serde(default)]
     pub(crate) pending_calls: Vec<(NodeIndex, String)>,
+    /// Pending impl→trait edges to resolve after all files are indexed
+    #[serde(default)]
+    pub(crate) pending_impls: Vec<(NodeIndex, String)>,
 }
 
 impl Palace {
@@ -63,6 +66,7 @@ impl Palace {
             file_index: FxHashMap::default(),
             name_index: FxHashMap::default(),
             pending_calls: Vec::new(),
+            pending_impls: Vec::new(),
         }
     }
 
@@ -145,6 +149,11 @@ impl Palace {
         self.pending_calls.push((caller, callee_name));
     }
 
+    /// Record an impl→trait edge to be resolved after all files are indexed
+    pub fn add_pending_impl(&mut self, impl_idx: NodeIndex, trait_name: String) {
+        self.pending_impls.push((impl_idx, trait_name));
+    }
+
     /// Resolve all pending call edges. Call this after all files have been analyzed.
     pub fn resolve_pending_calls(&mut self) {
         use rustc_hash::FxHashSet;
@@ -170,6 +179,20 @@ impl Palace {
                     if !exists {
                         self.graph.add_edge(caller_idx, target, EdgeKind::Calls);
                     }
+                }
+            }
+        }
+
+        // Resolve pending impl→trait edges
+        let pending_impls = std::mem::take(&mut self.pending_impls);
+        for (impl_idx, trait_name) in pending_impls {
+            let targets: Vec<NodeIndex> = self.find_by_name(&trait_name).to_vec();
+            for target in targets {
+                if let Some(tn) = self.get_node(target)
+                    && matches!(tn.kind, NodeKind::Trait)
+                {
+                    self.graph.add_edge(impl_idx, target, EdgeKind::Implements);
+                    break;
                 }
             }
         }

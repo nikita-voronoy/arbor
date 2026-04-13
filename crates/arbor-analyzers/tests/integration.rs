@@ -1165,6 +1165,78 @@ fn java_search() {
 }
 
 // ============================================================
+//  IMPLEMENTS EDGES (cross-language)
+// ============================================================
+
+#[test]
+fn rust_implements_edges() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let root = std::fs::canonicalize(root).unwrap();
+    let mut p = Palace::new();
+    let registry = AnalyzerRegistry::new().unwrap();
+    registry.analyze_project(&root, &mut p).unwrap();
+    let refs = p.references("Analyzer");
+    let impls: Vec<_> = refs
+        .iter()
+        .filter(|r| matches!(r.kind, ReferenceKind::Implementation))
+        .filter_map(|r| p.get_node(r.node))
+        .collect();
+    assert!(
+        impls.len() >= 4,
+        "Analyzer trait should have >=4 implementations, got {}",
+        impls.len()
+    );
+}
+
+#[test]
+fn java_implements_edges() {
+    let (p, _) = analyze("java-project");
+    let refs = p.references("AuthProvider");
+    let impls: Vec<_> = refs
+        .iter()
+        .filter(|r| matches!(r.kind, ReferenceKind::Implementation))
+        .filter_map(|r| p.get_node(r.node))
+        .collect();
+    assert!(
+        !impls.is_empty(),
+        "Java AuthService should implement AuthProvider"
+    );
+    assert_eq!(impls[0].name, "AuthService");
+}
+
+#[test]
+fn csharp_implements_edges() {
+    let (p, _) = analyze("csharp-project");
+    let refs = p.references("IAuthProvider");
+    let impls: Vec<_> = refs
+        .iter()
+        .filter(|r| matches!(r.kind, ReferenceKind::Implementation))
+        .filter_map(|r| p.get_node(r.node))
+        .collect();
+    assert!(
+        !impls.is_empty(),
+        "C# AuthService should implement IAuthProvider"
+    );
+    assert_eq!(impls[0].name, "AuthService");
+}
+
+#[test]
+fn kotlin_implements_edges() {
+    let (p, _) = analyze("kotlin-project");
+    let refs = p.references("AuthProvider");
+    let impls: Vec<_> = refs
+        .iter()
+        .filter(|r| matches!(r.kind, ReferenceKind::Implementation))
+        .filter_map(|r| p.get_node(r.node))
+        .collect();
+    assert!(
+        !impls.is_empty(),
+        "Kotlin AuthService should implement AuthProvider"
+    );
+    assert_eq!(impls[0].name, "AuthService");
+}
+
+// ============================================================
 //  MIXED PROJECT (Rust + Ansible + Docs)
 // ============================================================
 
