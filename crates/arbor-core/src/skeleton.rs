@@ -656,9 +656,13 @@ impl Palace {
             .replace("(mut self, ", "(mut, ")
             .replace("(mut self)", "(mut)");
 
-        // 5. Truncate if still too long
+        // 5. Truncate if still too long (char-boundary safe)
         if shortened.len() > 120 {
-            format!("{}...", &shortened[..117])
+            let mut end = 117;
+            while !shortened.is_char_boundary(end) {
+                end -= 1;
+            }
+            format!("{}...", &shortened[..end])
         } else {
             shortened
         }

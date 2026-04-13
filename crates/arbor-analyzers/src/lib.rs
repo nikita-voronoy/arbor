@@ -1,5 +1,3 @@
-#![allow(clippy::new_without_default)]
-
 pub mod code;
 pub mod docs;
 pub mod iac;
@@ -78,10 +76,9 @@ impl AnalyzerRegistry {
     /// Returns an error if any analyzer fails.
     pub fn analyze_project(&self, root: &Path, palace: &mut Palace) -> Result<Vec<ProjectFacet>> {
         let facets = arbor_detect::detect(root);
-        for facet in &facets {
-            for analyzer in self.for_facet(facet) {
-                analyzer.analyze(root, palace)?;
-            }
+        // Use for_facets to deduplicate — each analyzer runs at most once
+        for analyzer in self.for_facets(&facets) {
+            analyzer.analyze(root, palace)?;
         }
         palace.resolve_pending_calls();
         Ok(facets)

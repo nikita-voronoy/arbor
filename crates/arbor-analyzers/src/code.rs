@@ -268,7 +268,15 @@ impl CodeAnalyzer {
 
         Self { languages }
     }
+}
 
+impl Default for CodeAnalyzer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl CodeAnalyzer {
     /// Generate a markdown table of supported languages and their features.
     /// Derived directly from the `NodeQueries` config — always in sync with the code.
     #[must_use]
@@ -556,7 +564,7 @@ impl CodeAnalyzer {
             None
         };
 
-        let current_parent = if let Some(nk) = node_kind {
+        let current_parent = node_kind.map_or(parent_idx, |nk| {
             let name = Self::extract_name(&ts_node, source);
             let sig = Self::extract_signature(&ts_node, source);
             let vis = Self::extract_visibility(&ts_node, source, config);
@@ -580,25 +588,19 @@ impl CodeAnalyzer {
 
             // Skip anonymous nodes for non-function types (reduces noise)
             if name == "anonymous" && !matches!(nk, NodeKind::Function) {
-                parent_idx
-            } else {
-                let idx = palace.add_node(node);
-                palace.add_edge(parent_idx, idx, EdgeKind::Contains);
-
-                // Extract call edges from function bodies
-                if matches!(nk, NodeKind::Function) {
-                    Self::extract_calls(&ts_node, source, idx, config, palace);
-                }
-
-                idx
+                return parent_idx;
             }
-        } else if config.queries.use_decl.contains(&kind) {
-            // Extract import edges
-            Self::extract_import(&ts_node, source, parent_idx, palace);
-            parent_idx
-        } else {
-            parent_idx
-        };
+
+            let idx = palace.add_node(node);
+            palace.add_edge(parent_idx, idx, EdgeKind::Contains);
+
+            // Extract call edges from function bodies
+            if matches!(nk, NodeKind::Function) {
+                Self::extract_calls(&ts_node, source, idx, config, palace);
+            }
+
+            idx
+        });
 
         // Recurse into children (with stack growth for deeply nested ASTs)
         if cursor.goto_first_child() {
@@ -729,6 +731,18 @@ impl CodeAnalyzer {
         "anonymous".to_string()
     }
 
+    /// Truncate a string at a UTF-8 char boundary, appending "..." if truncated.
+    fn truncate_sig(s: &str, max: usize) -> String {
+        if s.len() <= max {
+            return s.to_string();
+        }
+        let mut end = max;
+        while !s.is_char_boundary(end) {
+            end -= 1;
+        }
+        format!("{}...", &s[..end])
+    }
+
     fn extract_signature(node: &tree_sitter::Node, source: &[u8]) -> Option<String> {
         let kind = node.kind();
 
@@ -755,10 +769,7 @@ impl CodeAnalyzer {
                 .unwrap_or("")
                 .trim();
             // Truncate long C signatures
-            if sig.len() > 200 {
-                return Some(format!("{}...", &sig[..200]));
-            }
-            return Some(sig.to_string());
+            return Some(Self::truncate_sig(sig, 200));
         }
 
         // C#/Java: method_declaration, constructor_declaration → everything before body
@@ -770,10 +781,7 @@ impl CodeAnalyzer {
             let sig = std::str::from_utf8(&source[start..end])
                 .unwrap_or("")
                 .trim();
-            if sig.len() > 200 {
-                return Some(format!("{}...", &sig[..200]));
-            }
-            return Some(sig.to_string());
+            return Some(Self::truncate_sig(sig, 200));
         }
 
         // Kotlin: function_declaration → everything before function_body child
@@ -810,13 +818,8 @@ impl CodeAnalyzer {
     /// Extract macro signature: #define NAME VALUE or #define NAME(args) VALUE
     fn extract_macro_signature(node: &tree_sitter::Node, source: &[u8]) -> String {
         let text = node.utf8_text(source).unwrap_or("");
-        // Take first line only, truncate if too long
         let first_line = text.lines().next().unwrap_or(text);
-        if first_line.len() > 120 {
-            format!("{}...", &first_line[..120])
-        } else {
-            first_line.to_string()
-        }
+        Self::truncate_sig(first_line, 120)
     }
 
     fn extract_visibility(
@@ -945,49 +948,53 @@ impl CodeAnalyzer {
         config: &LanguageConfig,
         palace: &mut Palace,
     ) {
+        // Collect unique call names first, then resolve — avoids duplicate edges
+        let mut call_names: Vec<String> = Vec::new();
         let mut cursor = node.walk();
-        Self::find_calls_recursive(&mut cursor, source, fn_idx, config, palace);
+        Self::collect_call_names(&mut cursor, source, config, &mut call_names);
+        call_names.sort_unstable();
+        call_names.dedup();
+
+        for name in call_names {
+            let targets: Vec<_> = palace.find_by_name(&name).to_vec();
+            if targets.is_empty() {
+                palace.add_pending_call(fn_idx, name);
+            } else {
+                for target in targets {
+                    if target != fn_idx {
+                        palace.add_edge(fn_idx, target, EdgeKind::Calls);
+                    }
+                }
+            }
+        }
     }
 
-    fn find_calls_recursive(
+    fn collect_call_names(
         cursor: &mut tree_sitter::TreeCursor,
         source: &[u8],
-        fn_idx: petgraph::stable_graph::NodeIndex,
         config: &LanguageConfig,
-        palace: &mut Palace,
+        out: &mut Vec<String>,
     ) {
         let node = cursor.node();
 
         if config.queries.call_expr.contains(&node.kind()) {
-            // Extract the function name from the call
-            // Most languages use a "function" field; Java uses "name"; Kotlin uses the first child
             let func_node = node
                 .child_by_field_name("function")
                 .or_else(|| node.child_by_field_name("name"))
                 .or_else(|| node.child_by_field_name("type"))
                 .or_else(|| node.child(0));
             if let Some(func_node) = func_node {
-                let call_name = func_node.utf8_text(source).unwrap_or("").to_string();
+                let call_name = func_node.utf8_text(source).unwrap_or("");
                 // Extract just the last segment (e.g., "foo::bar" → "bar", "auth.login" → "login")
                 let short_name = call_name
                     .rsplit("::")
                     .next()
-                    .unwrap_or(&call_name)
+                    .unwrap_or(call_name)
                     .rsplit('.')
                     .next()
-                    .unwrap_or(&call_name);
-
-                // Try to find the target in the graph
-                let targets: Vec<_> = palace.find_by_name(short_name).to_vec();
-                if targets.is_empty() {
-                    // Target not yet indexed — defer to second pass
-                    palace.add_pending_call(fn_idx, short_name.to_string());
-                } else {
-                    for target in targets {
-                        if target != fn_idx {
-                            palace.add_edge(fn_idx, target, EdgeKind::Calls);
-                        }
-                    }
+                    .unwrap_or(call_name);
+                if !short_name.is_empty() {
+                    out.push(short_name.to_string());
                 }
             }
         }
@@ -995,7 +1002,7 @@ impl CodeAnalyzer {
         if cursor.goto_first_child() {
             loop {
                 stacker::maybe_grow(64 * 1024, 2 * 1024 * 1024, || {
-                    Self::find_calls_recursive(cursor, source, fn_idx, config, palace);
+                    Self::collect_call_names(cursor, source, config, out);
                 });
                 if !cursor.goto_next_sibling() {
                     break;
@@ -1003,17 +1010,6 @@ impl CodeAnalyzer {
             }
             cursor.goto_parent();
         }
-    }
-
-    fn extract_import(
-        node: &tree_sitter::Node,
-        source: &[u8],
-        parent_idx: petgraph::stable_graph::NodeIndex,
-        palace: &mut Palace,
-    ) {
-        let import_text = node.utf8_text(source).unwrap_or("").to_string();
-        // For now just record the import as a reference — full resolution comes later
-        let _ = (import_text, parent_idx, palace);
     }
 }
 

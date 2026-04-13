@@ -16,6 +16,8 @@ pub struct AnsibleAnalyzer {
 }
 
 impl AnsibleAnalyzer {
+    /// # Errors
+    /// Returns an error if regex compilation fails.
     pub fn new() -> Result<Self> {
         Ok(Self {
             jinja_var_re: Regex::new(r"\{\{\s*(\w+)\s*\}\}")?,
@@ -352,6 +354,8 @@ pub struct TerraformAnalyzer {
 }
 
 impl TerraformAnalyzer {
+    /// # Errors
+    /// Returns an error if regex compilation fails.
     pub fn new() -> Result<Self> {
         Ok(Self {
             // Match: resource "type" "name" {, variable "name" {, etc.

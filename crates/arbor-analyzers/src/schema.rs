@@ -13,9 +13,15 @@ pub struct SchemaAnalyzer {
     create_table_re: Regex,
     column_re: Regex,
     fk_re: Regex,
+    // Protobuf patterns
+    message_re: Regex,
+    service_re: Regex,
+    rpc_re: Regex,
 }
 
 impl SchemaAnalyzer {
+    /// # Errors
+    /// Returns an error if regex compilation fails.
     pub fn new() -> Result<Self> {
         Ok(Self {
             create_table_re: Regex::new(r"(?i)CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)")?,
@@ -23,6 +29,9 @@ impl SchemaAnalyzer {
                 r"(?i)^\s+(\w+)\s+(INTEGER|TEXT|VARCHAR|BOOLEAN|TIMESTAMP|UUID|BIGINT|SERIAL|INT|REAL|FLOAT|DOUBLE|DECIMAL|CHAR|BLOB|DATE|TIME|JSON|JSONB)",
             )?,
             fk_re: Regex::new(r"(?i)REFERENCES\s+(\w+)\s*\((\w+)\)")?,
+            message_re: Regex::new(r"^\s*message\s+(\w+)")?,
+            service_re: Regex::new(r"^\s*service\s+(\w+)")?,
+            rpc_re: Regex::new(r"^\s*rpc\s+(\w+)\s*\((\w+)\)\s*returns\s*\((\w+)\)")?,
         })
     }
 
@@ -175,16 +184,12 @@ impl SchemaAnalyzer {
         );
         let file_idx = palace.add_node(file_node);
 
-        let message_re = Regex::new(r"^\s*message\s+(\w+)")?;
-        let service_re = Regex::new(r"^\s*service\s+(\w+)")?;
-        let rpc_re = Regex::new(r"^\s*rpc\s+(\w+)\s*\((\w+)\)\s*returns\s*\((\w+)\)")?;
-
         let mut current_parent = file_idx;
 
         for (i, line) in lines.iter().enumerate() {
             let line_num = i as u32 + 1;
 
-            if let Some(cap) = message_re.captures(line) {
+            if let Some(cap) = self.message_re.captures(line) {
                 let msg_node = Node::new(
                     NodeKind::Message,
                     &cap[1],
@@ -198,7 +203,7 @@ impl SchemaAnalyzer {
                 current_parent = msg_idx;
             }
 
-            if let Some(cap) = service_re.captures(line) {
+            if let Some(cap) = self.service_re.captures(line) {
                 let svc_node = Node::new(
                     NodeKind::Trait,
                     &cap[1],
@@ -212,7 +217,7 @@ impl SchemaAnalyzer {
                 current_parent = svc_idx;
             }
 
-            if let Some(cap) = rpc_re.captures(line) {
+            if let Some(cap) = self.rpc_re.captures(line) {
                 let rpc_node = Node::new(
                     NodeKind::Function,
                     &cap[1],

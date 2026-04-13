@@ -88,12 +88,25 @@ impl ArborServer {
             }
 
             let count = changed_files.len();
+            let mut errors = 0usize;
             for path in &changed_files {
-                if let Ok(source) = std::fs::read_to_string(path) {
-                    for analyzer in registry.for_facets(&facets) {
-                        let _ = analyzer.analyze_file(path, &source, &mut palace);
+                match std::fs::read_to_string(path) {
+                    Ok(source) => {
+                        for analyzer in registry.for_facets(&facets) {
+                            if let Err(e) = analyzer.analyze_file(path, &source, &mut palace) {
+                                eprintln!("Arbor: failed to analyze {}: {e}", path.display());
+                                errors += 1;
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Arbor: failed to read {}: {e}", path.display());
+                        errors += 1;
                     }
                 }
+            }
+            if errors > 0 {
+                eprintln!("Arbor: {errors} file(s) had errors during incremental update");
             }
 
             palace.resolve_pending_calls();
