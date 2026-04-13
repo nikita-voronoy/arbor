@@ -5,7 +5,10 @@ use std::path::Path;
 const INDEX_DIR: &str = ".arbor";
 const INDEX_FILE: &str = "index.bin";
 
-/// Save the palace graph to disk
+/// Save the palace graph to disk.
+///
+/// # Errors
+/// Returns an error if serialization or file writing fails.
 pub fn save(palace: &Palace, project_root: &Path) -> Result<()> {
     let dir = project_root.join(INDEX_DIR);
     std::fs::create_dir_all(&dir)?;
@@ -17,7 +20,10 @@ pub fn save(palace: &Palace, project_root: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Load the palace graph from disk
+/// Load the palace graph from disk.
+///
+/// # Errors
+/// Returns an error if the index file exists but cannot be read or deserialized.
 pub fn load(project_root: &Path) -> Result<Option<Palace>> {
     let path = project_root.join(INDEX_DIR).join(INDEX_FILE);
     if !path.exists() {

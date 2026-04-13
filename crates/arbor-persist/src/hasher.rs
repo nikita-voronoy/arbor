@@ -12,11 +12,15 @@ pub struct FileHashes {
 }
 
 impl FileHashes {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Hash a file's contents and return whether it changed
+    /// Hash a file's contents and return whether it changed.
+    ///
+    /// # Errors
+    /// Returns an error if the file cannot be read.
     pub fn check_file(&mut self, path: &Path) -> Result<FileStatus> {
         let contents =
             std::fs::read(path).with_context(|| format!("Failed to read {}", path.display()))?;
@@ -42,10 +46,13 @@ impl FileHashes {
 
     /// Get all tracked files
     pub fn tracked_files(&self) -> impl Iterator<Item = &Path> {
-        self.hashes.keys().map(|p| p.as_path())
+        self.hashes.keys().map(std::path::PathBuf::as_path)
     }
 
-    /// Save hashes to disk
+    /// Save hashes to disk.
+    ///
+    /// # Errors
+    /// Returns an error if the file cannot be written.
     pub fn save(&self, project_root: &Path) -> Result<()> {
         let dir = project_root.join(".arbor");
         std::fs::create_dir_all(&dir)?;
@@ -54,7 +61,10 @@ impl FileHashes {
         Ok(())
     }
 
-    /// Load hashes from disk
+    /// Load hashes from disk.
+    ///
+    /// # Errors
+    /// Returns an error if the hash file exists but cannot be read or deserialized.
     pub fn load(project_root: &Path) -> Result<Self> {
         let path = project_root.join(".arbor").join(HASHES_FILE);
         if !path.exists() {
