@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.6](https://github.com/nikita-voronoy/arbor/compare/arbor-v0.1.5...arbor-v0.1.6) (2026-04-13)
+
+
+### Features
+
+* 5 new MCP tools, code quality improvements, auto-sync docs ([#29](https://github.com/nikita-voronoy/arbor/issues/29)) ([eda0c12](https://github.com/nikita-voronoy/arbor/commit/eda0c12b25052243e411bee48ab2d25dcd8a30b1))
+
+
+### Documentation
+
+* add Code of Conduct and Security Policy ([#27](https://github.com/nikita-voronoy/arbor/issues/27)) ([c394685](https://github.com/nikita-voronoy/arbor/commit/c39468500d7ff6fa94551f2058182f9da2d69124))
+
 ## [0.1.5](https://github.com/nikita-voronoy/arbor/compare/arbor-v0.1.4...arbor-v0.1.5) (2026-04-13)
 
 
