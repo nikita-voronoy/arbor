@@ -32,6 +32,7 @@ struct NodeQueries {
 }
 
 impl CodeAnalyzer {
+    #[must_use]
     pub fn new() -> Self {
         let mut languages = HashMap::new();
 
@@ -244,14 +245,14 @@ impl CodeAnalyzer {
             .git_global(true)
             .git_exclude(true)
             .build()
-            .filter_map(|entry| entry.ok())
-            .filter(|entry| entry.file_type().map(|ft| ft.is_file()).unwrap_or(false))
-            .map(|entry| entry.into_path())
+            .filter_map(std::result::Result::ok)
+            .filter(|entry| entry.file_type().is_some_and(|ft| ft.is_file()))
+            .map(ignore::DirEntry::into_path)
             .filter(|path| self.language_for_file(path).is_some())
             .collect()
     }
 
-    fn parse_file(&self, _path: &Path, source: &str, config: &LanguageConfig) -> Result<Tree> {
+    fn parse_file(_path: &Path, source: &str, config: &LanguageConfig) -> Result<Tree> {
         let mut parser = Parser::new();
         parser
             .set_language(&config.language)
@@ -311,19 +312,16 @@ impl CodeAnalyzer {
             // struct foo *bar   → no body → skip (type reference, not definition)
             let has_body = ts_node.child_by_field_name("body").is_some()
                 || (0..ts_node.child_count()).any(|i| {
-                    ts_node
-                        .child(i)
-                        .map(|c| {
-                            let ck = c.kind();
-                            ck == "field_declaration_list" || ck == "declaration_list"
-                        })
-                        .unwrap_or(false)
+                    ts_node.child(i).is_some_and(|c| {
+                        let ck = c.kind();
+                        ck == "field_declaration_list" || ck == "declaration_list"
+                    })
                 });
             if has_body {
                 Some(NodeKind::Struct)
             } else {
                 // Not a definition — record a TypeRef edge to the real definition
-                let ref_name = self.extract_name(&ts_node, source);
+                let ref_name = Self::extract_name(&ts_node, source);
                 if ref_name != "anonymous" {
                     let targets = palace.find_by_name(&ref_name).to_vec();
                     for target_idx in targets {
@@ -347,13 +345,12 @@ impl CodeAnalyzer {
                 || (0..ts_node.child_count()).any(|i| {
                     ts_node
                         .child(i)
-                        .map(|c| c.kind() == "enumerator_list")
-                        .unwrap_or(false)
+                        .is_some_and(|c| c.kind() == "enumerator_list")
                 });
             if has_body {
                 Some(NodeKind::Enum)
             } else {
-                let ref_name = self.extract_name(&ts_node, source);
+                let ref_name = Self::extract_name(&ts_node, source);
                 if ref_name != "anonymous" {
                     let targets = palace.find_by_name(&ref_name).to_vec();
                     for target_idx in targets {
@@ -376,9 +373,9 @@ impl CodeAnalyzer {
         };
 
         let current_parent = if let Some(nk) = node_kind {
-            let name = self.extract_name(&ts_node, source);
-            let sig = self.extract_signature(&ts_node, source);
-            let vis = self.extract_visibility(&ts_node, source);
+            let name = Self::extract_name(&ts_node, source);
+            let sig = Self::extract_signature(&ts_node, source);
+            let vis = Self::extract_visibility(&ts_node, source);
 
             let span = Span::new(
                 ts_node.start_position().row as u32 + 1,
@@ -391,7 +388,7 @@ impl CodeAnalyzer {
 
             // For macros: extract the #define name and value as signature
             if matches!(nk, NodeKind::Macro) {
-                let macro_sig = self.extract_macro_signature(&ts_node, source);
+                let macro_sig = Self::extract_macro_signature(&ts_node, source);
                 node = node.with_signature(macro_sig);
             } else if let Some(s) = sig {
                 node = node.with_signature(s);
@@ -406,14 +403,14 @@ impl CodeAnalyzer {
 
                 // Extract call edges from function bodies
                 if matches!(nk, NodeKind::Function) {
-                    self.extract_calls(&ts_node, source, idx, config, palace);
+                    Self::extract_calls(&ts_node, source, idx, config, palace);
                 }
 
                 idx
             }
         } else if config.queries.use_decl.contains(&kind) {
             // Extract import edges
-            self.extract_import(&ts_node, source, parent_idx, palace);
+            Self::extract_import(&ts_node, source, parent_idx, palace);
             parent_idx
         } else {
             parent_idx
@@ -433,14 +430,14 @@ impl CodeAnalyzer {
         }
     }
 
-    fn extract_name(&self, node: &tree_sitter::Node, source: &[u8]) -> String {
+    fn extract_name(node: &tree_sitter::Node, source: &[u8]) -> String {
         let kind = node.kind();
 
         // C/C++: function_definition → declarator (function_declarator) → declarator (identifier)
         if kind == "function_definition"
             && let Some(declarator) = node.child_by_field_name("declarator")
         {
-            return self.extract_declarator_name(&declarator, source);
+            return Self::extract_declarator_name(&declarator, source);
         }
 
         // C/C++: struct_specifier / class_specifier / enum_specifier → name
@@ -484,8 +481,8 @@ impl CodeAnalyzer {
     }
 
     /// Recursively extract the identifier name from a C/C++ declarator chain
-    /// e.g. function_declarator → pointer_declarator → identifier
-    fn extract_declarator_name(&self, node: &tree_sitter::Node, source: &[u8]) -> String {
+    /// e.g. `function_declarator` → `pointer_declarator` → identifier
+    fn extract_declarator_name(node: &tree_sitter::Node, source: &[u8]) -> String {
         let kind = node.kind();
 
         if kind == "identifier" {
@@ -494,7 +491,7 @@ impl CodeAnalyzer {
 
         // function_declarator → declarator field holds the name (or another wrapper)
         if let Some(inner) = node.child_by_field_name("declarator") {
-            return self.extract_declarator_name(&inner, source);
+            return Self::extract_declarator_name(&inner, source);
         }
 
         // Fallback: first identifier anywhere in children
@@ -509,7 +506,7 @@ impl CodeAnalyzer {
         "anonymous".to_string()
     }
 
-    fn extract_signature(&self, node: &tree_sitter::Node, source: &[u8]) -> Option<String> {
+    fn extract_signature(node: &tree_sitter::Node, source: &[u8]) -> Option<String> {
         let kind = node.kind();
 
         // Rust: function_item
@@ -517,8 +514,7 @@ impl CodeAnalyzer {
             let start = node.start_byte();
             let end = node
                 .child_by_field_name("body")
-                .map(|b| b.start_byte())
-                .unwrap_or(node.end_byte());
+                .map_or_else(|| node.end_byte(), |b| b.start_byte());
             let sig = std::str::from_utf8(&source[start..end])
                 .unwrap_or("")
                 .trim()
@@ -531,8 +527,7 @@ impl CodeAnalyzer {
             let start = node.start_byte();
             let end = node
                 .child_by_field_name("body")
-                .map(|b| b.start_byte())
-                .unwrap_or(node.end_byte());
+                .map_or_else(|| node.end_byte(), |b| b.start_byte());
             let sig = std::str::from_utf8(&source[start..end])
                 .unwrap_or("")
                 .trim();
@@ -548,8 +543,7 @@ impl CodeAnalyzer {
             let start = node.start_byte();
             let end = node
                 .child_by_field_name("body")
-                .map(|b| b.start_byte())
-                .unwrap_or(node.end_byte());
+                .map_or_else(|| node.end_byte(), |b| b.start_byte());
             let sig = std::str::from_utf8(&source[start..end])
                 .unwrap_or("")
                 .trim();
@@ -563,7 +557,7 @@ impl CodeAnalyzer {
     }
 
     /// Extract macro signature: #define NAME VALUE or #define NAME(args) VALUE
-    fn extract_macro_signature(&self, node: &tree_sitter::Node, source: &[u8]) -> String {
+    fn extract_macro_signature(node: &tree_sitter::Node, source: &[u8]) -> String {
         let text = node.utf8_text(source).unwrap_or("");
         // Take first line only, truncate if too long
         let first_line = text.lines().next().unwrap_or(text);
@@ -574,7 +568,7 @@ impl CodeAnalyzer {
         }
     }
 
-    fn extract_visibility(&self, node: &tree_sitter::Node, source: &[u8]) -> Visibility {
+    fn extract_visibility(node: &tree_sitter::Node, source: &[u8]) -> Visibility {
         for i in 0..node.child_count() {
             if let Some(child) = node.child(i) {
                 let ck = child.kind();
@@ -623,7 +617,6 @@ impl CodeAnalyzer {
     }
 
     fn extract_calls(
-        &self,
         node: &tree_sitter::Node,
         source: &[u8],
         fn_idx: petgraph::stable_graph::NodeIndex,
@@ -631,11 +624,10 @@ impl CodeAnalyzer {
         palace: &mut Palace,
     ) {
         let mut cursor = node.walk();
-        self.find_calls_recursive(&mut cursor, source, fn_idx, config, palace);
+        Self::find_calls_recursive(&mut cursor, source, fn_idx, config, palace);
     }
 
     fn find_calls_recursive(
-        &self,
         cursor: &mut tree_sitter::TreeCursor,
         source: &[u8],
         fn_idx: petgraph::stable_graph::NodeIndex,
@@ -669,7 +661,7 @@ impl CodeAnalyzer {
         if cursor.goto_first_child() {
             loop {
                 stacker::maybe_grow(64 * 1024, 2 * 1024 * 1024, || {
-                    self.find_calls_recursive(cursor, source, fn_idx, config, palace);
+                    Self::find_calls_recursive(cursor, source, fn_idx, config, palace);
                 });
                 if !cursor.goto_next_sibling() {
                     break;
@@ -680,7 +672,6 @@ impl CodeAnalyzer {
     }
 
     fn extract_import(
-        &self,
         node: &tree_sitter::Node,
         source: &[u8],
         parent_idx: petgraph::stable_graph::NodeIndex,
@@ -739,7 +730,7 @@ impl Analyzer for CodeAnalyzer {
             .language_for_file(path)
             .context("Unsupported file type")?;
 
-        let tree = self.parse_file(path, source, config)?;
+        let tree = Self::parse_file(path, source, config)?;
         self.extract_nodes(&tree, source.as_bytes(), path, config, palace);
         Ok(())
     }

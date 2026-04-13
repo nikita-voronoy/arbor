@@ -16,6 +16,9 @@ pub struct AnsibleAnalyzer {
 }
 
 impl AnsibleAnalyzer {
+    /// # Panics
+    /// Panics if the built-in Jinja variable regex is invalid (should never happen).
+    #[must_use]
     pub fn new() -> Self {
         Self {
             jinja_var_re: Regex::new(r"\{\{\s*(\w+)\s*\}\}").unwrap(),
@@ -28,7 +31,7 @@ impl AnsibleAnalyzer {
             return Ok(());
         }
 
-        for entry in std::fs::read_dir(&roles_dir)?.filter_map(|e| e.ok()) {
+        for entry in std::fs::read_dir(&roles_dir)?.filter_map(std::result::Result::ok) {
             let role_path = entry.path();
             if !role_path.is_dir() {
                 continue;
@@ -187,7 +190,7 @@ impl AnsibleAnalyzer {
             return Ok(());
         }
 
-        for entry in std::fs::read_dir(templates_dir)?.filter_map(|e| e.ok()) {
+        for entry in std::fs::read_dir(templates_dir)?.filter_map(std::result::Result::ok) {
             let path = entry.path();
             let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
             if ext != "j2" {
@@ -224,7 +227,7 @@ impl AnsibleAnalyzer {
             return Ok(());
         }
 
-        for entry in std::fs::read_dir(&playbooks_dir)?.filter_map(|e| e.ok()) {
+        for entry in std::fs::read_dir(&playbooks_dir)?.filter_map(std::result::Result::ok) {
             let path = entry.path();
             let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
             if ext != "yml" && ext != "yaml" {
@@ -242,7 +245,7 @@ impl AnsibleAnalyzer {
 
                 let play_node = Node::new(NodeKind::Task, play_name, &path, Span::new(1, 1, 0, 0))
                     .with_visibility(Visibility::Public)
-                    .with_signature(format!("play: {}", play_name));
+                    .with_signature(format!("play: {play_name}"));
                 let play_idx = palace.add_node(play_node);
 
                 // Link to roles
@@ -291,7 +294,7 @@ impl AnsibleAnalyzer {
             return Ok(());
         }
 
-        for entry in std::fs::read_dir(&group_vars_dir)?.filter_map(|e| e.ok()) {
+        for entry in std::fs::read_dir(&group_vars_dir)?.filter_map(std::result::Result::ok) {
             let path = entry.path();
             let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
             if ext != "yml" && ext != "yaml" {
@@ -352,6 +355,9 @@ pub struct TerraformAnalyzer {
 }
 
 impl TerraformAnalyzer {
+    /// # Panics
+    /// Panics if the built-in Terraform block regex is invalid (should never happen).
+    #[must_use]
     pub fn new() -> Self {
         Self {
             // Match: resource "type" "name" {, variable "name" {, etc.
@@ -371,9 +377,9 @@ impl TerraformAnalyzer {
             .git_global(true)
             .git_exclude(true)
             .build()
-            .filter_map(|entry| entry.ok())
-            .filter(|entry| entry.file_type().map(|ft| ft.is_file()).unwrap_or(false))
-            .map(|entry| entry.into_path())
+            .filter_map(std::result::Result::ok)
+            .filter(|entry| entry.file_type().is_some_and(|ft| ft.is_file()))
+            .map(ignore::DirEntry::into_path)
             .filter(|path| path.extension().and_then(|e| e.to_str()) == Some("tf"))
             .collect()
     }
@@ -404,31 +410,31 @@ impl TerraformAnalyzer {
                     (
                         NodeKind::Resource,
                         n.to_string(),
-                        Some(format!("resource \"{}\" \"{}\"", type_or_name, n)),
+                        Some(format!("resource \"{type_or_name}\" \"{n}\"")),
                     )
                 }
                 "data" => {
                     let n = name.unwrap_or(type_or_name);
                     (
                         NodeKind::Resource,
-                        format!("data.{}", n),
-                        Some(format!("data \"{}\" \"{}\"", type_or_name, n)),
+                        format!("data.{n}"),
+                        Some(format!("data \"{type_or_name}\" \"{n}\"")),
                     )
                 }
                 "variable" => (
                     NodeKind::Variable,
                     type_or_name.to_string(),
-                    Some(format!("variable \"{}\"", type_or_name)),
+                    Some(format!("variable \"{type_or_name}\"")),
                 ),
                 "output" => (
                     NodeKind::Variable,
-                    format!("output.{}", type_or_name),
-                    Some(format!("output \"{}\"", type_or_name)),
+                    format!("output.{type_or_name}"),
+                    Some(format!("output \"{type_or_name}\"")),
                 ),
                 "module" => (
                     NodeKind::Module,
                     type_or_name.to_string(),
-                    Some(format!("module \"{}\"", type_or_name)),
+                    Some(format!("module \"{type_or_name}\"")),
                 ),
                 _ => (NodeKind::Variable, type_or_name.to_string(), None),
             };
@@ -452,7 +458,7 @@ impl TerraformAnalyzer {
             let short_name = ref_name.split('.').next().unwrap_or(ref_name);
 
             let target_name = match ref_type {
-                "data" => format!("data.{}", short_name),
+                "data" => format!("data.{short_name}"),
                 _ => short_name.to_string(),
             };
 

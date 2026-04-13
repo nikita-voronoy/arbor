@@ -15,10 +15,16 @@ pub trait Analyzer {
     /// Which project facets this analyzer can handle
     fn can_handle(&self, facet: &ProjectFacet) -> bool;
 
-    /// Analyze the entire project from root
+    /// Analyze the entire project from root.
+    ///
+    /// # Errors
+    /// Returns an error if file reading or parsing fails.
     fn analyze(&self, root: &Path, palace: &mut Palace) -> Result<()>;
 
-    /// Analyze a single file (for incremental updates)
+    /// Analyze a single file (for incremental updates).
+    ///
+    /// # Errors
+    /// Returns an error if parsing fails.
     fn analyze_file(&self, path: &Path, source: &str, palace: &mut Palace) -> Result<()>;
 }
 
@@ -28,6 +34,7 @@ pub struct AnalyzerRegistry {
 }
 
 impl AnalyzerRegistry {
+    #[must_use]
     pub fn new() -> Self {
         let mut registry = Self {
             analyzers: Vec::new(),
@@ -51,7 +58,7 @@ impl AnalyzerRegistry {
         self.analyzers
             .iter()
             .filter(|a| a.can_handle(facet))
-            .map(|a| a.as_ref())
+            .map(std::convert::AsRef::as_ref)
             .collect()
     }
 
@@ -60,11 +67,14 @@ impl AnalyzerRegistry {
         self.analyzers
             .iter()
             .filter(|a| facets.iter().any(|f| a.can_handle(f)))
-            .map(|a| a.as_ref())
+            .map(std::convert::AsRef::as_ref)
             .collect()
     }
 
-    /// Analyze a project: detect facets, run matching analyzers, resolve cross-file calls
+    /// Analyze a project: detect facets, run matching analyzers, resolve cross-file calls.
+    ///
+    /// # Errors
+    /// Returns an error if any analyzer fails.
     pub fn analyze_project(&self, root: &Path, palace: &mut Palace) -> Result<Vec<ProjectFacet>> {
         let facets = arbor_detect::detect(root);
         for facet in &facets {

@@ -70,13 +70,11 @@ fn rust_function_names_and_signatures() {
     let sig = login.signature.as_deref().unwrap();
     assert!(
         sig.contains("username"),
-        "signature should contain param name: {}",
-        sig
+        "signature should contain param name: {sig}"
     );
     assert!(
         sig.contains("Option<User>"),
-        "signature should contain return type: {}",
-        sig
+        "signature should contain return type: {sig}"
     );
 }
 
@@ -101,22 +99,23 @@ fn rust_visibility() {
 fn rust_call_graph() {
     let (p, _) = analyze("rust-project");
     let refs = p.references("login");
-    let calls: Vec<_> = refs
-        .iter()
-        .filter(|r| matches!(r.kind, ReferenceKind::Call))
-        .collect();
-    assert!(!calls.is_empty(), "main should call login");
+    assert!(
+        refs.iter().any(|r| matches!(r.kind, ReferenceKind::Call)),
+        "main should call login"
+    );
 }
 
 #[test]
 fn rust_references() {
     let (p, _) = analyze("rust-project");
     let refs = p.references("login");
-    let defs: Vec<_> = refs
-        .iter()
-        .filter(|r| matches!(r.kind, ReferenceKind::Definition))
-        .collect();
-    assert_eq!(defs.len(), 1, "login should have exactly 1 definition");
+    assert_eq!(
+        refs.iter()
+            .filter(|r| matches!(r.kind, ReferenceKind::Definition))
+            .count(),
+        1,
+        "login should have exactly 1 definition"
+    );
 }
 
 #[test]
@@ -202,8 +201,7 @@ fn c_function_names() {
     ] {
         assert!(
             find_fn(&p, name).is_some(),
-            "should find C function: {}",
-            name
+            "should find C function: {name}"
         );
     }
 }
@@ -215,14 +213,9 @@ fn c_function_signatures() {
     let sig = f.signature.as_deref().unwrap();
     assert!(
         sig.contains("struct Server"),
-        "sig should have return type: {}",
-        sig
+        "sig should have return type: {sig}"
     );
-    assert!(
-        sig.contains("int max_conn"),
-        "sig should have param: {}",
-        sig
-    );
+    assert!(sig.contains("int max_conn"), "sig should have param: {sig}");
 }
 
 #[test]
@@ -255,8 +248,7 @@ fn c_struct_definitions_only() {
     let struct_count = count_kind(&p, NodeKind::Struct);
     assert_eq!(
         struct_count, 3,
-        "should have exactly 3 struct defs, got {}",
-        struct_count
+        "should have exactly 3 struct defs, got {struct_count}"
     );
 }
 
@@ -273,8 +265,7 @@ fn c_enum_with_variants() {
     ] {
         assert!(
             find_kind(&p, variant, NodeKind::EnumVariant).is_some(),
-            "should find enum variant: {}",
-            variant
+            "should find enum variant: {variant}"
         );
     }
 }
@@ -284,11 +275,10 @@ fn c_macros_indexed() {
     let (p, _) = analyze("c-project");
     for name in ["MAX_BUFFER_SIZE", "VKD3D_FLAG_STAGGER", "CLAMP"] {
         let m = find_kind(&p, name, NodeKind::Macro);
-        assert!(m.is_some(), "should find macro: {}", name);
+        assert!(m.is_some(), "should find macro: {name}");
         assert!(
             m.unwrap().signature.is_some(),
-            "macro {} should have signature",
-            name
+            "macro {name} should have signature"
         );
     }
 }
@@ -312,14 +302,13 @@ fn c_macro_signature_content() {
 fn c_call_graph() {
     let (p, _) = analyze("c-project");
     let refs = p.references("find_connection");
-    let calls: Vec<_> = refs
+    let call_count = refs
         .iter()
         .filter(|r| matches!(r.kind, ReferenceKind::Call))
-        .collect();
+        .count();
     assert!(
-        calls.len() >= 2,
-        "find_connection should be called by server_disconnect and server_status, got {}",
-        calls.len()
+        call_count >= 2,
+        "find_connection should be called by server_disconnect and server_status, got {call_count}"
     );
 }
 
@@ -381,8 +370,7 @@ fn c_compact_dedup() {
     let connection_count = ck.matches("st:Connection").count();
     assert_eq!(
         connection_count, 1,
-        "Connection should appear once in compact, got {}",
-        connection_count
+        "Connection should appear once in compact, got {connection_count}"
     );
 }
 
@@ -402,8 +390,7 @@ fn python_functions() {
     for name in ["login", "find_user", "verify_password", "logout", "main"] {
         assert!(
             find_fn(&p, name).is_some(),
-            "should find Python function: {}",
-            name
+            "should find Python function: {name}"
         );
     }
 }
@@ -414,8 +401,7 @@ fn python_classes() {
     for name in ["User", "Session", "AuthError"] {
         assert!(
             find_kind(&p, name, NodeKind::Struct).is_some(),
-            "should find Python class: {}",
-            name
+            "should find Python class: {name}"
         );
     }
 }
@@ -424,11 +410,10 @@ fn python_classes() {
 fn python_call_graph() {
     let (p, _) = analyze("python-project");
     let refs = p.references("login");
-    let calls: Vec<_> = refs
-        .iter()
-        .filter(|r| matches!(r.kind, ReferenceKind::Call))
-        .collect();
-    assert!(!calls.is_empty(), "main should call login in Python");
+    assert!(
+        refs.iter().any(|r| matches!(r.kind, ReferenceKind::Call)),
+        "main should call login in Python"
+    );
 }
 
 #[test]
@@ -457,8 +442,7 @@ fn ts_functions() {
     for name in ["login", "findUser", "verifyPassword", "logout", "main"] {
         assert!(
             find_fn(&p, name).is_some(),
-            "should find TS function: {}",
-            name
+            "should find TS function: {name}"
         );
     }
 }
@@ -497,7 +481,7 @@ fn ts_call_graph() {
     // Call edge depends on source order — callee must be defined before caller
     let _ = has_call;
     assert!(
-        refs.len() >= 1,
+        !refs.is_empty(),
         "should find at least definition of verifyPassword"
     );
 }
@@ -518,8 +502,7 @@ fn go_functions() {
     for name in ["Login", "FindUser", "VerifyPassword", "NewUser", "main"] {
         assert!(
             find_fn(&p, name).is_some(),
-            "should find Go function: {}",
-            name
+            "should find Go function: {name}"
         );
     }
 }
@@ -539,12 +522,8 @@ fn go_call_graph() {
     let (p, _) = analyze("go-project");
     // Go: Login calls FindUser and VerifyPassword — same file
     let refs = p.references("NewUser");
-    let calls: Vec<_> = refs
-        .iter()
-        .filter(|r| matches!(r.kind, ReferenceKind::Call))
-        .collect();
     assert!(
-        !calls.is_empty(),
+        refs.iter().any(|r| matches!(r.kind, ReferenceKind::Call)),
         "FindUser should call NewUser in Go (same file, defined before use)"
     );
 }
@@ -593,8 +572,7 @@ fn ansible_variables() {
     for var in ["nginx_port", "app_port", "app_host"] {
         assert!(
             find_kind(&p, var, NodeKind::Variable).is_some(),
-            "should find variable: {}",
-            var
+            "should find variable: {var}"
         );
     }
 }
@@ -625,8 +603,7 @@ fn terraform_variables() {
     for var in ["ami_id", "instance_type", "environment"] {
         assert!(
             find_kind(&p, var, NodeKind::Variable).is_some(),
-            "should find tf variable: {}",
-            var
+            "should find tf variable: {var}"
         );
     }
 }
@@ -666,8 +643,7 @@ fn docs_sections() {
     ] {
         assert!(
             find_kind(&p, sec, NodeKind::Section).is_some(),
-            "should find section: {}",
-            sec
+            "should find section: {sec}"
         );
     }
 }
@@ -682,8 +658,7 @@ fn schema_sql_tables() {
     for table in ["users", "posts", "comments"] {
         assert!(
             find_kind(&p, table, NodeKind::Table).is_some(),
-            "should find SQL table: {}",
-            table
+            "should find SQL table: {table}"
         );
     }
 }
@@ -705,8 +680,7 @@ fn schema_protobuf_messages() {
     for msg in ["User", "Post", "GetUserRequest", "ListPostsRequest"] {
         assert!(
             find_kind(&p, msg, NodeKind::Message).is_some(),
-            "should find protobuf message: {}",
-            msg
+            "should find protobuf message: {msg}"
         );
     }
 }
@@ -726,8 +700,7 @@ fn schema_protobuf_rpcs() {
     let sig = get_user.unwrap().signature.as_deref().unwrap();
     assert!(
         sig.contains("GetUserRequest"),
-        "rpc sig should have request type: {}",
-        sig
+        "rpc sig should have request type: {sig}"
     );
 }
 
@@ -747,8 +720,7 @@ fn csharp_classes() {
     for name in ["Program", "User", "Session", "AuthService"] {
         assert!(
             find_kind(&p, name, NodeKind::Struct).is_some(),
-            "should find C# class: {}",
-            name
+            "should find C# class: {name}"
         );
     }
 }
@@ -772,8 +744,7 @@ fn csharp_enums() {
     for variant in ["Admin", "Editor", "Viewer", "Guest"] {
         assert!(
             find_kind(&p, variant, NodeKind::EnumVariant).is_some(),
-            "should find enum member: {}",
-            variant
+            "should find enum member: {variant}"
         );
     }
 }
@@ -790,11 +761,7 @@ fn csharp_methods() {
         "Authenticate",
         "Revoke",
     ] {
-        assert!(
-            find_fn(&p, name).is_some(),
-            "should find C# method: {}",
-            name
-        );
+        assert!(find_fn(&p, name).is_some(), "should find C# method: {name}");
     }
 }
 
@@ -820,15 +787,10 @@ fn csharp_signatures() {
     let (p, _) = analyze("csharp-project");
     let login = find_fn(&p, "Login").unwrap();
     let sig = login.signature.as_deref().unwrap();
-    assert!(
-        sig.contains("username"),
-        "sig should contain param: {}",
-        sig
-    );
+    assert!(sig.contains("username"), "sig should contain param: {sig}");
     assert!(
         sig.contains("User"),
-        "sig should contain return type: {}",
-        sig
+        "sig should contain return type: {sig}"
     );
 }
 
@@ -836,11 +798,10 @@ fn csharp_signatures() {
 fn csharp_call_graph() {
     let (p, _) = analyze("csharp-project");
     let refs = p.references("Login");
-    let calls: Vec<_> = refs
-        .iter()
-        .filter(|r| matches!(r.kind, ReferenceKind::Call))
-        .collect();
-    assert!(!calls.is_empty(), "Main should call Login");
+    assert!(
+        refs.iter().any(|r| matches!(r.kind, ReferenceKind::Call)),
+        "Main should call Login"
+    );
 }
 
 #[test]
@@ -917,16 +878,10 @@ fn impact_excludes_file_nodes_in_output() {
     // Impact raw result may contain File nodes (via Contains edges) — that's ok,
     // the filtering happens in the MCP tools layer, not in Palace::impact()
     let impacts = p.impact(primary.unwrap(), 5);
-    let non_file_impacts: Vec<_> = impacts
-        .iter()
-        .filter(|(idx, _)| {
-            p.get_node(*idx)
-                .map(|n| n.kind != NodeKind::File)
-                .unwrap_or(false)
-        })
-        .collect();
     assert!(
-        !non_file_impacts.is_empty(),
+        impacts
+            .iter()
+            .any(|(idx, _)| p.get_node(*idx).is_some_and(|n| n.kind != NodeKind::File)),
         "should have non-File impact nodes"
     );
 }
