@@ -21,19 +21,13 @@ Enter
 Sleep 300ms
 Show
 
-Type "# Index a project and see its architecture"
-Enter
-Sleep 500ms
-
 Type "arbor . --cli | head -10"
 Enter
 Sleep 4s
 
 Type ""
 Enter
-Type "# Token-optimized compact view"
-Enter
-Sleep 500ms
+Sleep 300ms
 
 Type "arbor . --compact | head -25"
 Enter
