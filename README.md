@@ -26,7 +26,7 @@
 <p align="center">
   <!-- LANGUAGES_BADGE:START --><img src="https://img.shields.io/badge/languages-10-blue?style=flat-square" alt="Languages"><!-- LANGUAGES_BADGE:END -->
   <img src="https://img.shields.io/badge/tree--sitter-powered-green?style=flat-square" alt="tree-sitter">
-  <img src="https://img.shields.io/badge/MCP-compatible-purple?style=flat-square" alt="MCP">
+  <!-- TOOLS_BADGE:START --><img src="https://img.shields.io/badge/MCP_tools-14-purple?style=flat-square" alt="MCP"><!-- TOOLS_BADGE:END -->
   <img src="https://img.shields.io/badge/license-MIT-lightgrey?style=flat-square" alt="License">
 </p>
 
@@ -39,7 +39,7 @@
 ## Highlights
 
 - **1M lines of code &rarr; 500 lines of context.** arbor builds a symbol graph with tree-sitter and compresses it into token-efficient summaries an LLM can actually use.
-- **9 surgical MCP tools.** The LLM sees architecture first, then drills into exactly what it needs &mdash; no grep noise, no wasted tokens.
+- **14 surgical MCP tools.** The LLM sees architecture first, then drills into exactly what it needs &mdash; no grep noise, no wasted tokens.
 - **Sub-second incremental re-index.** Only changed files are re-analyzed via content hashing. Cold index of a 1M LOC project takes under 10 seconds.
 - **15 languages and formats.** Rust, Python, TypeScript, Go, C/C++, C#, Kotlin, plus Terraform, Ansible, SQL, Protobuf, OpenAPI, and Markdown.
 - **Zero configuration.** One install command. No config files. Works with any project structure.
@@ -78,7 +78,7 @@ claude mcp add arbor -- arbor
 
 </details>
 
-That's it. Claude will call `boot` &rarr; `compact` &rarr; `search` &rarr; `references` as needed.
+That's it. Claude will call `boot` &rarr; `compact` &rarr; `search` &rarr; `source` &rarr; `callers` as needed.
 
 ### CLI mode
 
@@ -122,7 +122,7 @@ The installer adds a hook to `~/.claude/settings.json` that nudges Claude to use
         "hooks": [
           {
             "type": "command",
-            "command": "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"additionalContext\":\"STOP: Prefer arbor MCP tools (search, references, skeleton, compact, boot) over Grep/Glob for code navigation. Fall back to Grep/Glob only for string literals, comments, or regex patterns.\"}}'",
+            "command": "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"additionalContext\":\"STOP: Prefer arbor MCP tools (search, source, callers, references, skeleton, compact, boot) over Grep/Glob for code navigation. Fall back to Grep/Glob only for string literals, comments, or regex patterns.\"}}'",
             "statusMessage": "Checking arbor preference..."
           }
         ]
@@ -145,9 +145,12 @@ The installer appends a block to `~/.claude/CLAUDE.md` that teaches Claude when 
 ## Code navigation: use arbor MCP first
 
 - **Instead of grep for a symbol** → use `mcp__arbor__search`
-- **Instead of grep for "who calls X"** → use `mcp__arbor__references`
+- **Instead of grep for "who calls X"** → use `mcp__arbor__callers`
+- **Instead of reading a function's code** → use `mcp__arbor__source`
 - **Instead of reading many files** → use `mcp__arbor__boot`, then `mcp__arbor__skeleton` or `mcp__arbor__compact`
+- **Instead of reading one file** → use `mcp__arbor__summary`
 - **Instead of tracing dependencies** → use `mcp__arbor__dependencies` or `mcp__arbor__impact`
+- **To list all types/traits/functions** → use `mcp__arbor__symbols`
 - **After making changes** → call `mcp__arbor__reindex`
 
 Start every session with `mcp__arbor__boot`.
@@ -211,22 +214,29 @@ flowchart LR
 
 1. **Index** &mdash; tree-sitter parses source files into ASTs. arbor extracts functions, structs, traits, enums, calls, imports, and type references.
 2. **Persist** &mdash; the graph is saved to `.arbor/`. On re-index, only changed files are re-analyzed (xxh3 content hashing).
-3. **Serve** &mdash; 9 MCP tools let the LLM explore the graph at any granularity.
+3. **Serve** &mdash; 14 MCP tools let the LLM explore the graph at any granularity.
 4. **Resolve** &mdash; cross-file call edges are resolved in a second pass after all files are indexed.
 
 ## MCP Tools
 
-| Tool | What it does | Typical tokens |
-|------|-------------|---------------:|
-| **`boot`** | Architecture overview: modules, key types, hub functions | ~150&ndash;400 |
-| **`skeleton`** | Full symbol tree with signatures, organized by file | ~2k&ndash;20k |
-| **`compact`** | Token-optimized skeleton: one-line sigs, no tests, collapsed enums | ~500&ndash;9k |
-| **`search`** | Fuzzy symbol search &mdash; exact &rarr; prefix &rarr; contains | varies |
-| **`references`** | All refs to a symbol: definitions, calls, imports, type refs, impls | varies |
-| **`dependencies`** | What does this symbol depend on? (transitive, configurable depth) | varies |
-| **`impact`** | What breaks if this symbol changes? (reverse dependency traversal) | varies |
-| **`tunnels`** | Cross-project shared types in multi-repo mode | varies |
-| **`reindex`** | Full re-index from scratch | &mdash; |
+<!-- TOOLS_TABLE:START -->
+| Tool | What it does |
+|------|-------------|
+| **`boot`** | Get a compact boot screen overview of the project (~170 tokens): project type, file/function/struct counts, top-level modules, key public types. Call this first. |
+| **`skeleton`** | Get a compact skeleton showing all symbols (functions, structs, traits, enums) organized by file. Optionally filter by path prefix and control depth. |
+| **`compact`** | Get a ultra-compact token-optimized skeleton. Uses abbreviated tags (fn/st/tr/en) and compressed signatures. Best for large codebases where full skeleton is too verbose. |
+| **`references`** | Find all references to a symbol: definitions, calls, imports, type refs, implementations. Returns file locations and reference kinds. |
+| **`dependencies`** | Get transitive dependencies of a symbol. Direction 'outgoing' (default) shows what it depends on; 'incoming' shows what depends on it. |
+| **`impact`** | Impact analysis: find everything that would be affected if the given symbol changes. Shows all transitive dependents. |
+| **`search`** | Fuzzy search for symbols by name substring. Set sig=true to search in signatures instead (e.g. find all functions taking `Palace` as a parameter). Results ranked: exact > prefix > contains. |
+| **`source`** | Show the source code of a symbol (function, struct, trait, etc.) by name. Returns the actual implementation with line numbers. Use this instead of reading whole files when you know the symbol name. |
+| **`callers`** | Find all functions that call a given symbol. Returns caller names with file locations. Simpler than 'references' when you just need to know who calls what. |
+| **`summary`** | Get a rich summary of a single file: all symbols with signatures, visibility, and call relationships. More detailed than skeleton for a specific file. |
+| **`symbols`** | List all symbols of a given kind across the project. Kinds: fn, struct, trait, enum, macro, module, or 'all'. Useful for getting a project-wide view of types, traits, or entry points. |
+| **`implementations`** | Find all types that implement a given trait. Returns implementor names with file locations. |
+| **`reindex`** | Re-index the project from scratch. Use after significant file changes. |
+| **`tunnels`** | Show cross-project tunnels: shared types and symbols that connect different wings (projects) in a multi-project palace. |
+<!-- TOOLS_TABLE:END -->
 
 ## Performance
 
@@ -291,7 +301,7 @@ graph TB
     subgraph arbor-mcp["arbor-mcp"]
         MCP["MCP server<br>(rmcp over stdio)"]
         CLI["CLI entry point"]
-        H["9 tool handlers"]
+        H["14 tool handlers"]
     end
 
     subgraph arbor-analyzers["arbor-analyzers"]

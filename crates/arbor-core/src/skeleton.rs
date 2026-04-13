@@ -188,7 +188,25 @@ impl Palace {
             | NodeKind::Document => {
                 info.domain_items.insert(node.name.as_str());
             }
-            _ => {}
+            // Non-summary items: skip in boot screen
+            NodeKind::File
+            | NodeKind::Module
+            | NodeKind::Struct
+            | NodeKind::Trait
+            | NodeKind::Enum
+            | NodeKind::Impl
+            | NodeKind::EnumVariant
+            | NodeKind::Constant
+            | NodeKind::TypeAlias
+            | NodeKind::Macro
+            | NodeKind::Task
+            | NodeKind::Handler
+            | NodeKind::Variable
+            | NodeKind::Template
+            | NodeKind::Section
+            | NodeKind::CodeBlock
+            | NodeKind::Column
+            | NodeKind::Endpoint => {}
         }
     }
 
@@ -218,16 +236,7 @@ impl Palace {
                 if meaningful_degree <= 1 {
                     continue;
                 }
-                let kind_tag = match node.kind {
-                    NodeKind::Struct => "st",
-                    NodeKind::Trait => "tr",
-                    NodeKind::Function => "fn",
-                    NodeKind::Enum => "en",
-                    NodeKind::Role => "role",
-                    NodeKind::Table => "tbl",
-                    NodeKind::Message => "msg",
-                    _ => "item",
-                };
+                let kind_tag = node.kind.short_tag();
                 let entry = best_by_name
                     .entry(node.name.as_str())
                     .or_insert((kind_tag, 0));
@@ -312,7 +321,14 @@ impl Palace {
             match edge.weight() {
                 crate::graph::EdgeKind::Calls => call_count += 1,
                 crate::graph::EdgeKind::TypeRef => typeref_count += 1,
-                _ => {}
+                crate::graph::EdgeKind::Contains
+                | crate::graph::EdgeKind::Imports
+                | crate::graph::EdgeKind::Implements
+                | crate::graph::EdgeKind::DependsOn
+                | crate::graph::EdgeKind::Notifies
+                | crate::graph::EdgeKind::References
+                | crate::graph::EdgeKind::LinksTo
+                | crate::graph::EdgeKind::Includes => {}
             }
         }
         if call_count > 0 || typeref_count > 0 {
@@ -385,29 +401,11 @@ impl Palace {
         }
 
         let prefix = "  ".repeat(indent);
-        let kind_tag = match node.kind {
-            NodeKind::Function => "fn",
-            NodeKind::Struct => "struct",
-            NodeKind::Trait => "trait",
-            NodeKind::Impl => "impl",
-            NodeKind::Enum => "enum",
-            NodeKind::Module => "mod",
-            NodeKind::Constant => "const",
-            NodeKind::EnumVariant => "variant",
-            NodeKind::Macro => "macro",
-            NodeKind::TypeAlias => "type",
-            NodeKind::Role => "role",
-            NodeKind::Task => "task",
-            NodeKind::Handler => "handler",
-            NodeKind::Variable => "var",
-            NodeKind::Document => "doc",
-            NodeKind::Section => "sec",
-            _ => "item",
-        };
+        let kind_tag = node.kind.label();
 
         let vis = match node.visibility {
             Visibility::Public => "pub ",
-            _ => "",
+            Visibility::Private | Visibility::Crate => "",
         };
 
         if let Some(sig) = &node.signature {
@@ -553,31 +551,10 @@ impl Palace {
         idx: NodeIndex,
         node: &crate::graph::Node,
     ) -> bool {
-        let tag = match node.kind {
-            NodeKind::Function => "fn",
-            NodeKind::Struct => "st",
-            NodeKind::Trait => "tr",
-            NodeKind::Enum => "en",
-            NodeKind::Module => "mod",
-            NodeKind::Constant => "co",
-            NodeKind::Macro => "def",
-            NodeKind::TypeAlias => "ty",
-            NodeKind::Role => "role",
-            NodeKind::Task => "task",
-            NodeKind::Handler => "hnd",
-            NodeKind::Variable => "var",
-            NodeKind::Template => "tpl",
-            NodeKind::Resource => "res",
-            NodeKind::Document => "doc",
-            NodeKind::Section => "sec",
-            NodeKind::CodeBlock => "code",
-            NodeKind::Table => "tbl",
-            NodeKind::Endpoint => "ep",
-            NodeKind::Message => "msg",
-            NodeKind::EnumVariant | NodeKind::Column | NodeKind::Impl | NodeKind::File => {
-                return false;
-            }
-        };
+        let tag = node.kind.short_tag();
+        if tag.is_empty() {
+            return false;
+        }
 
         let vis = if node.visibility == Visibility::Public {
             "+"

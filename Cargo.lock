@@ -58,7 +58,7 @@ dependencies = [
 
 [[package]]
 name = "arbor-analyzers"
-version = "0.1.3"
+version = "0.1.5"
 dependencies = [
  "anyhow",
  "arbor-core",
@@ -86,18 +86,18 @@ dependencies = [
 
 [[package]]
 name = "arbor-core"
-version = "0.1.3"
+version = "0.1.5"
 dependencies = [
- "anyhow",
  "petgraph",
  "rustc-hash",
  "serde",
  "serde_json",
+ "thiserror",
 ]
 
 [[package]]
 name = "arbor-detect"
-version = "0.1.3"
+version = "0.1.5"
 dependencies = [
  "anyhow",
  "tempfile",
@@ -105,7 +105,7 @@ dependencies = [
 
 [[package]]
 name = "arbor-mcp"
-version = "0.1.3"
+version = "0.1.5"
 dependencies = [
  "anyhow",
  "arbor-analyzers",
@@ -124,7 +124,7 @@ dependencies = [
 
 [[package]]
 name = "arbor-persist"
-version = "0.1.3"
+version = "0.1.5"
 dependencies = [
  "anyhow",
  "arbor-core",

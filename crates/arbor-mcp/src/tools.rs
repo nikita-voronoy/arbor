@@ -1,4 +1,5 @@
 use arbor_analyzers::AnalyzerRegistry;
+use arbor_core::NodeIndex;
 use arbor_core::palace::Palace;
 use parking_lot::RwLock;
 use rmcp::{
@@ -9,7 +10,7 @@ use rmcp::{
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::fmt::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub struct ArborServer {
     palace: RwLock<Palace>,
@@ -25,93 +26,12 @@ impl ArborServer {
         let facet_labels: Vec<String> = facets.iter().map(|f| f.label().to_string()).collect();
 
         let cached_palace = arbor_persist::store::load(&root).unwrap_or(None);
-        let is_fresh = cached_palace.is_none();
         let mut palace = cached_palace.unwrap_or_default();
 
-        let changed = if is_fresh {
-            // Fresh index — just analyze everything, no hashing overhead
-            registry.analyze_project(&root, &mut palace)?;
-            palace.resolve_pending_calls();
-
-            // Hash indexed files for next time (only files Palace knows about)
-            let mut hashes = arbor_persist::hasher::FileHashes::new();
-            for path in palace.file_index.keys() {
-                let _ = hashes.check_file(path);
-            }
-            hashes.save(&root)?;
-            0usize
+        let changed = if palace.node_count() == 0 {
+            Self::full_index(&root, &registry, &mut palace)?
         } else {
-            // Incremental update — only re-analyze changed files
-            let mut hashes = arbor_persist::hasher::FileHashes::load(&root).unwrap_or_default();
-
-            // Only walk files the analyzers care about (not ALL files)
-            let current_files: std::collections::HashSet<PathBuf> =
-                palace.file_index.keys().cloned().collect();
-
-            // Check for deleted files
-            let tracked: Vec<PathBuf> = hashes
-                .tracked_files()
-                .map(std::path::Path::to_path_buf)
-                .collect();
-            for path in &tracked {
-                if !path.exists() {
-                    palace.remove_file(path);
-                    hashes.remove_file(path);
-                }
-            }
-
-            // Check for modified files
-            let mut changed_files = Vec::new();
-            for path in &current_files {
-                if let Ok(
-                    arbor_persist::hasher::FileStatus::New
-                    | arbor_persist::hasher::FileStatus::Modified,
-                ) = hashes.check_file(path)
-                {
-                    palace.remove_file(path);
-                    changed_files.push(path.clone());
-                }
-            }
-
-            // Also check for new files (not in cache) by re-walking
-            // This is needed to pick up newly created files
-            let all_files = arbor_persist::watcher::walk_files(&root);
-            for path in &all_files {
-                if !current_files.contains(path)
-                    && matches!(
-                        hashes.check_file(path),
-                        Ok(arbor_persist::hasher::FileStatus::New)
-                    )
-                {
-                    changed_files.push(path.clone());
-                }
-            }
-
-            let count = changed_files.len();
-            let mut errors = 0usize;
-            for path in &changed_files {
-                match std::fs::read_to_string(path) {
-                    Ok(source) => {
-                        for analyzer in registry.for_facets(&facets) {
-                            if let Err(e) = analyzer.analyze_file(path, &source, &mut palace) {
-                                eprintln!("Arbor: failed to analyze {}: {e}", path.display());
-                                errors += 1;
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!("Arbor: failed to read {}: {e}", path.display());
-                        errors += 1;
-                    }
-                }
-            }
-            if errors > 0 {
-                eprintln!("Arbor: {errors} file(s) had errors during incremental update");
-            }
-
-            palace.resolve_pending_calls();
-            hashes.save(&root)?;
-            count
+            Self::incremental_update(&root, &registry, &facets, &mut palace)?
         };
 
         arbor_persist::store::save(&palace, &root)?;
@@ -128,11 +48,220 @@ impl ArborServer {
         })
     }
 
+    /// Full index from scratch — no hashing overhead during analysis.
+    fn full_index(
+        root: &Path,
+        registry: &AnalyzerRegistry,
+        palace: &mut Palace,
+    ) -> anyhow::Result<usize> {
+        registry.analyze_project(root, palace)?;
+        palace.resolve_pending_calls();
+
+        let mut hashes = arbor_persist::hasher::FileHashes::new();
+        for path in palace.file_paths() {
+            let _ = hashes.check_file(path);
+        }
+        hashes.save(root)?;
+        Ok(0)
+    }
+
+    /// Incremental update — only re-analyze changed/new/deleted files.
+    fn incremental_update(
+        root: &Path,
+        registry: &AnalyzerRegistry,
+        facets: &[arbor_detect::ProjectFacet],
+        palace: &mut Palace,
+    ) -> anyhow::Result<usize> {
+        let mut hashes = arbor_persist::hasher::FileHashes::load(root).unwrap_or_default();
+
+        let current_files: std::collections::HashSet<PathBuf> =
+            palace.file_paths().map(Path::to_path_buf).collect();
+
+        // Remove deleted files
+        let tracked: Vec<PathBuf> = hashes
+            .tracked_files()
+            .map(std::path::Path::to_path_buf)
+            .collect();
+        for path in &tracked {
+            if !path.exists() {
+                palace.remove_file(path);
+                hashes.remove_file(path);
+            }
+        }
+
+        // Collect modified files
+        let mut changed_files = Vec::new();
+        for path in &current_files {
+            if let Ok(
+                arbor_persist::hasher::FileStatus::New
+                | arbor_persist::hasher::FileStatus::Modified,
+            ) = hashes.check_file(path)
+            {
+                palace.remove_file(path);
+                changed_files.push(path.clone());
+            }
+        }
+
+        // Collect newly created files (not yet in cache)
+        let all_files = arbor_persist::watcher::walk_files(root);
+        for path in &all_files {
+            if !current_files.contains(path)
+                && matches!(
+                    hashes.check_file(path),
+                    Ok(arbor_persist::hasher::FileStatus::New)
+                )
+            {
+                changed_files.push(path.clone());
+            }
+        }
+
+        let count = changed_files.len();
+        let mut errors = 0usize;
+        for path in &changed_files {
+            match std::fs::read_to_string(path) {
+                Ok(source) => {
+                    for analyzer in registry.for_facets(facets) {
+                        if let Err(e) = analyzer.analyze_file(path, &source, palace) {
+                            eprintln!("Arbor: failed to analyze {}: {e}", path.display());
+                            errors += 1;
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Arbor: failed to read {}: {e}", path.display());
+                    errors += 1;
+                }
+            }
+        }
+        if errors > 0 {
+            eprintln!("Arbor: {errors} file(s) had errors during incremental update");
+        }
+
+        palace.resolve_pending_calls();
+        hashes.save(root)?;
+        Ok(count)
+    }
+
     fn project_name(&self) -> &str {
         self.root
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("unknown")
+    }
+
+    /// Convert an absolute path to a project-relative display string.
+    fn rel_path<'a>(root: &Path, abs: &'a Path) -> &'a Path {
+        abs.strip_prefix(root).unwrap_or(abs)
+    }
+
+    /// Read the source code of a symbol using its span info.
+    fn read_symbol_source(
+        palace: &Palace,
+        root: &Path,
+        idx: NodeIndex,
+        max_lines: usize,
+    ) -> String {
+        let Some(node) = palace.get_node(idx) else {
+            return "Node not found in graph".to_string();
+        };
+
+        let content = match std::fs::read_to_string(&node.file) {
+            Ok(c) => c,
+            Err(e) => return format!("Failed to read {}: {e}", node.file.display()),
+        };
+
+        let lines: Vec<&str> = content.lines().collect();
+        let start = node.span.start_line.saturating_sub(1) as usize;
+        let end = (node.span.end_line as usize).min(lines.len());
+
+        if start >= lines.len() {
+            return format!(
+                "Span {}:{} is out of range for {} ({} lines)",
+                node.span.start_line,
+                node.span.end_line,
+                node.file.display(),
+                lines.len()
+            );
+        }
+
+        let rel = node.file.strip_prefix(root).unwrap_or(&node.file);
+        let sig = node.signature.as_deref().unwrap_or(&node.name);
+        let mut out = format!(
+            "// {} {} ({}:{}–{})\n",
+            node.kind.label(),
+            sig,
+            rel.display(),
+            node.span.start_line,
+            node.span.end_line
+        );
+
+        let source_lines = &lines[start..end];
+        if source_lines.len() > max_lines {
+            for (i, line) in source_lines.iter().take(max_lines).enumerate() {
+                let _ = writeln!(out, "{:>4} | {line}", start + i + 1);
+            }
+            let _ = writeln!(
+                out,
+                "  ... truncated ({} more lines)",
+                source_lines.len() - max_lines
+            );
+        } else {
+            for (i, line) in source_lines.iter().enumerate() {
+                let _ = writeln!(out, "{:>4} | {line}", start + i + 1);
+            }
+        }
+        out
+    }
+
+    /// Format a rich summary of a single file.
+    fn format_file_summary(
+        palace: &Palace,
+        path: &Path,
+        indices: &[NodeIndex],
+        root: &Path,
+    ) -> String {
+        use arbor_core::graph::NodeKind;
+
+        let mut out = format!("File: {}\n", Self::rel_path(root, path).display());
+
+        let mut symbols: Vec<_> = indices
+            .iter()
+            .filter_map(|&idx| palace.get_node(idx).map(|n| (idx, n)))
+            .filter(|(_, n)| !matches!(n.kind, NodeKind::File))
+            .collect();
+        symbols.sort_by_key(|(_, n)| n.span.start_line);
+
+        if symbols.is_empty() {
+            out.push_str("  (no symbols found)\n");
+            return out;
+        }
+
+        let _ = writeln!(out, "{} symbols:\n", symbols.len());
+
+        for (idx, node) in &symbols {
+            let vis = if node.visibility == arbor_core::graph::Visibility::Public {
+                "pub "
+            } else {
+                ""
+            };
+            let sig = node.signature.as_deref().unwrap_or(&node.name);
+            let _ = writeln!(
+                out,
+                "  L{:<4} {vis}{} {}",
+                node.span.start_line,
+                node.kind.label(),
+                sig
+            );
+
+            // Show calls from this symbol
+            let mut calls = palace.callees(*idx);
+            if !calls.is_empty() {
+                calls.sort_unstable();
+                calls.dedup();
+                let _ = writeln!(out, "         → calls: [{}]", calls.join(", "));
+            }
+        }
+        out
     }
 
     /// CLI helpers (not MCP tools)
@@ -168,12 +297,23 @@ pub struct SymbolParams {
     pub symbol: String,
 }
 
+/// Direction for dependency traversal
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum DependencyDirection {
+    /// What this symbol depends on
+    #[default]
+    Outgoing,
+    /// What depends on this symbol
+    Incoming,
+}
+
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct DependenciesParams {
     /// Symbol name
     pub symbol: String,
     /// Direction: 'outgoing' (default) or 'incoming'
-    pub direction: Option<String>,
+    pub direction: Option<DependencyDirection>,
     /// Max traversal depth (default 5)
     pub max_depth: Option<usize>,
 }
@@ -198,8 +338,32 @@ pub struct ImpactParams {
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct SearchParams {
-    /// Search query (substring match)
+    /// Search query (substring match on symbol names, or on signatures if `sig` is true)
     pub query: String,
+    /// Search in signatures instead of names (e.g. find all functions taking `Palace`)
+    pub sig: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct SourceParams {
+    /// Symbol name to show source for
+    pub symbol: String,
+    /// Max lines to return (default 100)
+    pub max_lines: Option<usize>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct SummaryParams {
+    /// File path (relative to project root) to summarize
+    pub path: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct SymbolsParams {
+    /// Kind filter: "fn", "struct", "trait", "enum", "macro", or "all" (default "all")
+    pub kind: Option<String>,
+    /// Only show public symbols (default false)
+    pub public_only: Option<bool>,
 }
 
 // --- Tool implementations ---
@@ -262,11 +426,7 @@ impl ArborServer {
         // Filter out File nodes (line 0 noise)
         let refs: Vec<_> = refs
             .into_iter()
-            .filter(|r| {
-                palace
-                    .get_node(r.node)
-                    .is_some_and(|n| !matches!(n.kind, arbor_core::graph::NodeKind::File))
-            })
+            .filter(|r| palace.is_real_symbol(r.node))
             .collect();
 
         let mut out = format!(
@@ -278,10 +438,10 @@ impl ArborServer {
             if let Some(node) = palace.get_node(r.node) {
                 let _ = writeln!(
                     out,
-                    "  {:?} in {} ({}:{})",
+                    "  {} in {} ({}:{})",
                     r.kind,
                     node.name,
-                    node.file.display(),
+                    Self::rel_path(&self.root, &node.file).display(),
                     node.span.start_line
                 );
             }
@@ -302,9 +462,9 @@ impl ArborServer {
         };
 
         let max_depth = params.0.max_depth.unwrap_or(5);
-        let incoming = params.0.direction.as_deref() == Some("incoming");
+        let direction = params.0.direction.unwrap_or_default();
 
-        let deps = if incoming {
+        let deps = if direction == DependencyDirection::Incoming {
             palace.impact(node_idx, max_depth)
         } else {
             palace.dependencies(node_idx, max_depth)
@@ -316,36 +476,25 @@ impl ArborServer {
                 params.0.symbol
             );
         };
-        let dir_label = if incoming {
+        let dir_label = if direction == DependencyDirection::Incoming {
             "Dependents of"
         } else {
             "Dependencies of"
         };
         let deps: Vec<_> = deps
             .into_iter()
-            .filter(|(idx, _)| {
-                palace
-                    .get_node(*idx)
-                    .is_some_and(|n| !matches!(n.kind, arbor_core::graph::NodeKind::File))
-            })
+            .filter(|(idx, _)| palace.is_real_symbol(*idx))
             .collect();
 
         let mut out = format!("{dir_label} '{}' ({} found):\n", node.name, deps.len());
         for (dep_idx, depth) in &deps {
             if let Some(dep) = palace.get_node(*dep_idx) {
-                let kind = match dep.kind {
-                    arbor_core::graph::NodeKind::Function => "fn",
-                    arbor_core::graph::NodeKind::Struct => "struct",
-                    arbor_core::graph::NodeKind::Trait => "trait",
-                    arbor_core::graph::NodeKind::Macro => "macro",
-                    arbor_core::graph::NodeKind::EnumVariant => "variant",
-                    _ => "item",
-                };
                 let _ = writeln!(
                     out,
-                    "  [depth {depth}] {kind} {} ({}:{})",
+                    "  [depth {depth}] {} {} ({}:{})",
+                    dep.kind.label(),
                     dep.name,
-                    dep.file.display(),
+                    Self::rel_path(&self.root, &dep.file).display(),
                     dep.span.start_line
                 );
             }
@@ -369,11 +518,7 @@ impl ArborServer {
 
         let impacts: Vec<_> = impacts
             .into_iter()
-            .filter(|(idx, _)| {
-                palace
-                    .get_node(*idx)
-                    .is_some_and(|n| !matches!(n.kind, arbor_core::graph::NodeKind::File))
-            })
+            .filter(|(idx, _)| palace.is_real_symbol(*idx))
             .collect();
 
         let Some(node) = palace.get_node(node_idx) else {
@@ -393,7 +538,7 @@ impl ArborServer {
                     out,
                     "  [depth {depth}] {} ({}:{})",
                     imp.name,
-                    imp.file.display(),
+                    Self::rel_path(&self.root, &imp.file).display(),
                     imp.span.start_line
                 );
             }
@@ -403,10 +548,49 @@ impl ArborServer {
 
     #[tool(
         name = "search",
-        description = "Fuzzy search for symbols (functions, structs, traits, enums) by name substring. Results ranked: exact > prefix > contains."
+        description = "Fuzzy search for symbols by name substring. Set sig=true to search in signatures instead (e.g. find all functions taking `Palace` as a parameter). Results ranked: exact > prefix > contains."
     )]
     async fn search(&self, params: Parameters<SearchParams>) -> String {
+        let search_sig = params.0.sig.unwrap_or(false);
         let palace = self.palace.read();
+
+        if search_sig {
+            let query_lower = params.0.query.to_lowercase();
+            let mut matches: Vec<_> = palace
+                .node_weights()
+                .filter(|n| {
+                    n.signature
+                        .as_ref()
+                        .is_some_and(|sig| sig.to_lowercase().contains(&query_lower))
+                })
+                .collect();
+            matches.sort_by_key(|n| n.span.start_line);
+
+            if matches.is_empty() {
+                return format!("No signatures matching '{}'", params.0.query);
+            }
+
+            let mut out = format!(
+                "Signatures matching '{}' ({} found):\n",
+                params.0.query,
+                matches.len()
+            );
+            for node in matches.iter().take(30) {
+                let sig = node.signature.as_deref().unwrap_or(&node.name);
+                let _ = writeln!(
+                    out,
+                    "  {} {sig} ({}:{})",
+                    node.kind.label(),
+                    Self::rel_path(&self.root, &node.file).display(),
+                    node.span.start_line
+                );
+            }
+            if matches.len() > 30 {
+                let _ = writeln!(out, "  ... and {} more", matches.len() - 30);
+            }
+            return out;
+        }
+
         let results = palace.search(&params.0.query);
         if results.is_empty() {
             return format!("No symbols matching '{}'", params.0.query);
@@ -419,27 +603,222 @@ impl ArborServer {
         );
         for idx in results.iter().take(20) {
             if let Some(node) = palace.get_node(*idx) {
-                let kind = match node.kind {
-                    arbor_core::graph::NodeKind::Function => "fn",
-                    arbor_core::graph::NodeKind::Struct => "struct",
-                    arbor_core::graph::NodeKind::Trait => "trait",
-                    arbor_core::graph::NodeKind::Enum => "enum",
-                    arbor_core::graph::NodeKind::EnumVariant => "variant",
-                    arbor_core::graph::NodeKind::Macro => "macro",
-                    arbor_core::graph::NodeKind::Module => "mod",
-                    _ => "item",
-                };
+                let kind = node.kind.label();
                 let sig = node.signature.as_deref().unwrap_or(&node.name);
                 let _ = writeln!(
                     out,
                     "  {kind} {sig} ({}:{})",
-                    node.file.display(),
+                    Self::rel_path(&self.root, &node.file).display(),
                     node.span.start_line
                 );
             }
         }
         if results.len() > 20 {
             let _ = writeln!(out, "  ... and {} more", results.len() - 20);
+        }
+        out
+    }
+
+    #[tool(
+        name = "source",
+        description = "Show the source code of a symbol (function, struct, trait, etc.) by name. Returns the actual implementation with line numbers. Use this instead of reading whole files when you know the symbol name."
+    )]
+    async fn source(&self, params: Parameters<SourceParams>) -> String {
+        let max_lines = params.0.max_lines.unwrap_or(100);
+
+        let idx = self
+            .palace
+            .read()
+            .find_primary(&params.0.symbol)
+            .or_else(|| {
+                self.palace
+                    .read()
+                    .find_by_name(&params.0.symbol)
+                    .iter()
+                    .copied()
+                    .find(|&i| self.palace.read().is_real_symbol(i))
+            });
+
+        let Some(idx) = idx else {
+            return format!("Symbol '{}' not found", params.0.symbol);
+        };
+        let palace = self.palace.read();
+        Self::read_symbol_source(&palace, &self.root, idx, max_lines)
+    }
+
+    #[tool(
+        name = "callers",
+        description = "Find all functions that call a given symbol. Returns caller names with file locations. Simpler than 'references' when you just need to know who calls what."
+    )]
+    async fn callers(&self, params: Parameters<SymbolParams>) -> String {
+        let refs = self.palace.read().references(&params.0.symbol);
+
+        let palace = self.palace.read();
+        let callers: Vec<_> = refs
+            .iter()
+            .filter(|r| matches!(r.kind, arbor_core::query::ReferenceKind::Call))
+            .filter_map(|r| {
+                palace.get_node(r.node).map(|n| {
+                    (
+                        n.kind.label(),
+                        n.name.clone(),
+                        Self::rel_path(&self.root, &n.file).display().to_string(),
+                        n.span.start_line,
+                    )
+                })
+            })
+            .collect();
+        drop(palace);
+
+        if callers.is_empty() {
+            return format!("No callers found for '{}'", params.0.symbol);
+        }
+
+        let mut out = format!(
+            "Callers of '{}' ({} found):\n",
+            params.0.symbol,
+            callers.len()
+        );
+        for (kind, sig, file, line) in &callers {
+            let _ = writeln!(out, "  {kind} {sig} ({file}:{line})");
+        }
+        out
+    }
+
+    #[tool(
+        name = "summary",
+        description = "Get a rich summary of a single file: all symbols with signatures, visibility, and call relationships. More detailed than skeleton for a specific file."
+    )]
+    async fn summary(&self, params: Parameters<SummaryParams>) -> String {
+        let full_path = self.root.join(&params.0.path);
+        let resolved = {
+            let palace = self.palace.read();
+            if palace.nodes_in_file(&full_path).is_empty() {
+                palace
+                    .file_paths()
+                    .find(|p| p.ends_with(&params.0.path))
+                    .map(Path::to_path_buf)
+            } else {
+                Some(full_path)
+            }
+        };
+        let Some(path) = resolved else {
+            return format!("File '{}' not found in index", params.0.path);
+        };
+
+        let indices = self.palace.read().nodes_in_file(&path).to_vec();
+        let palace = self.palace.read();
+        Self::format_file_summary(&palace, &path, &indices, &self.root)
+    }
+
+    #[tool(
+        name = "symbols",
+        description = "List all symbols of a given kind across the project. Kinds: fn, struct, trait, enum, macro, module, or 'all'. Useful for getting a project-wide view of types, traits, or entry points."
+    )]
+    async fn symbols(&self, params: Parameters<SymbolsParams>) -> String {
+        use arbor_core::graph::NodeKind;
+
+        let palace = self.palace.read();
+        let public_only = params.0.public_only.unwrap_or(false);
+        let kind_filter = params.0.kind.as_deref().unwrap_or("all");
+
+        let target_kinds: Vec<NodeKind> = match kind_filter {
+            "fn" | "function" => vec![NodeKind::Function],
+            "struct" => vec![NodeKind::Struct],
+            "trait" => vec![NodeKind::Trait],
+            "enum" => vec![NodeKind::Enum],
+            "macro" => vec![NodeKind::Macro],
+            "mod" | "module" => vec![NodeKind::Module],
+            "type" => vec![NodeKind::Struct, NodeKind::Enum, NodeKind::Trait],
+            "all" => vec![
+                NodeKind::Function,
+                NodeKind::Struct,
+                NodeKind::Trait,
+                NodeKind::Enum,
+                NodeKind::Macro,
+            ],
+            other => {
+                return format!(
+                    "Unknown kind '{other}'. Use: fn, struct, trait, enum, macro, module, type, all"
+                );
+            }
+        };
+
+        // Collect into owned data so we can drop the lock early
+        let mut items: Vec<(String, String, &'static str, &'static str, u32)> = palace
+            .node_weights()
+            .filter(|n| target_kinds.contains(&n.kind))
+            .filter(|n| !public_only || n.visibility == arbor_core::graph::Visibility::Public)
+            .map(|n| {
+                let rel = n.file.strip_prefix(&self.root).unwrap_or(&n.file);
+                let sig = n.signature.as_deref().unwrap_or(&n.name).to_string();
+                let vis = if n.visibility == arbor_core::graph::Visibility::Public {
+                    "pub "
+                } else {
+                    ""
+                };
+                (
+                    rel.display().to_string(),
+                    sig,
+                    n.kind.label(),
+                    vis,
+                    n.span.start_line,
+                )
+            })
+            .collect();
+        drop(palace);
+
+        items.sort_by(|a, b| a.2.cmp(b.2).then(a.1.cmp(&b.1)));
+
+        if items.is_empty() {
+            return format!("No {kind_filter} symbols found");
+        }
+
+        let mut out = format!("{} {} symbols found:\n", items.len(), kind_filter);
+        for (rel, sig, kind, vis, line) in items.iter().take(50) {
+            let _ = writeln!(out, "  {vis}{kind} {sig} ({rel}:{line})");
+        }
+        if items.len() > 50 {
+            let _ = writeln!(out, "  ... and {} more", items.len() - 50);
+        }
+        out
+    }
+
+    #[tool(
+        name = "implementations",
+        description = "Find all types that implement a given trait. Returns implementor names with file locations."
+    )]
+    async fn implementations(&self, params: Parameters<SymbolParams>) -> String {
+        let refs = self.palace.read().references(&params.0.symbol);
+        let palace = self.palace.read();
+
+        let impls: Vec<_> = refs
+            .iter()
+            .filter(|r| matches!(r.kind, arbor_core::query::ReferenceKind::Implementation))
+            .filter_map(|r| {
+                palace.get_node(r.node).map(|n| {
+                    (
+                        n.kind.label(),
+                        n.name.clone(),
+                        Self::rel_path(&self.root, &n.file).display().to_string(),
+                        n.span.start_line,
+                    )
+                })
+            })
+            .collect();
+        drop(palace);
+
+        if impls.is_empty() {
+            return format!("No implementations found for '{}'", params.0.symbol);
+        }
+
+        let mut out = format!(
+            "Implementations of '{}' ({} found):\n",
+            params.0.symbol,
+            impls.len()
+        );
+        for (kind, name, file, line) in &impls {
+            let _ = writeln!(out, "  {kind} {name} ({file}:{line})");
         }
         out
     }
@@ -457,7 +836,9 @@ impl ArborServer {
         };
         match registry.analyze_project(&self.root, &mut palace) {
             Ok(facets) => {
-                let _ = arbor_persist::store::save(&palace, &self.root);
+                if let Err(e) = arbor_persist::store::save(&palace, &self.root) {
+                    eprintln!("Arbor: failed to save index: {e}");
+                }
                 let stats = palace.stats();
                 drop(palace);
                 // Rebuild file hashes (no lock needed)
@@ -465,7 +846,9 @@ impl ArborServer {
                 for path in arbor_persist::watcher::walk_files(&self.root) {
                     let _ = hashes.check_file(&path);
                 }
-                let _ = hashes.save(&self.root);
+                if let Err(e) = hashes.save(&self.root) {
+                    eprintln!("Arbor: failed to save file hashes: {e}");
+                }
                 format!(
                     "Re-indexed: {} files, {} fn, {} structs, {} enums, {} traits | Facets: {}",
                     stats.files,
@@ -496,3 +879,158 @@ impl ArborServer {
 
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for ArborServer {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use arbor_analyzers::AnalyzerRegistry;
+    use arbor_core::graph::{NodeKind, Visibility};
+    use std::path::PathBuf;
+
+    fn arbor_root() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
+    }
+
+    fn index_arbor() -> (Palace, PathBuf) {
+        let root = std::fs::canonicalize(arbor_root()).unwrap();
+        let mut palace = Palace::new();
+        let registry = AnalyzerRegistry::new().unwrap();
+        registry.analyze_project(&root, &mut palace).unwrap();
+        (palace, root)
+    }
+
+    #[test]
+    fn source_shows_function_code() {
+        let (palace, root) = index_arbor();
+        let idx = palace.find_primary("resolve_pending_calls").unwrap();
+        let output = ArborServer::read_symbol_source(&palace, &root, idx, 100);
+
+        assert!(
+            output.contains("resolve_pending_calls"),
+            "should contain function name"
+        );
+        assert!(output.contains("pending"), "should contain function body");
+        assert!(output.contains(" | "), "should have line numbers");
+    }
+
+    #[test]
+    fn source_shows_struct_code() {
+        let (palace, root) = index_arbor();
+        let idx = palace.find_primary("Palace").unwrap();
+        let output = ArborServer::read_symbol_source(&palace, &root, idx, 50);
+
+        assert!(output.contains("Palace"), "should show struct name");
+        assert!(output.contains("struct"), "header should show kind");
+    }
+
+    #[test]
+    fn source_respects_max_lines() {
+        let (palace, root) = index_arbor();
+        let idx = palace.find_primary("resolve_pending_calls").unwrap();
+        let output = ArborServer::read_symbol_source(&palace, &root, idx, 3);
+
+        assert!(
+            output.contains("truncated"),
+            "should truncate long functions"
+        );
+    }
+
+    #[test]
+    fn callers_of_add_node() {
+        let (palace, _root) = index_arbor();
+        let refs = palace.references("add_node");
+        let callers: Vec<_> = refs
+            .iter()
+            .filter(|r| matches!(r.kind, arbor_core::query::ReferenceKind::Call))
+            .filter_map(|r| palace.get_node(r.node))
+            .collect();
+
+        assert!(!callers.is_empty(), "add_node should have callers");
+        // walk_tree and various analyzers should call add_node
+        let caller_names: Vec<&str> = callers.iter().map(|n| n.name.as_str()).collect();
+        assert!(
+            caller_names.iter().any(|n| n.contains("walk")
+                || n.contains("parse")
+                || n.contains("analyze")
+                || n.contains("extract")
+                || n.contains("merge")),
+            "expected analyzer/walker callers, got: {caller_names:?}"
+        );
+    }
+
+    #[test]
+    fn summary_shows_file_symbols() {
+        let (palace, root) = index_arbor();
+        let path = root.join("crates/arbor-core/src/palace.rs");
+        let indices = palace.nodes_in_file(&path);
+        assert!(!indices.is_empty(), "palace.rs should have symbols");
+
+        let output = ArborServer::format_file_summary(&palace, &path, indices, &root);
+
+        assert!(output.contains("Palace"), "should contain Palace struct");
+        assert!(output.contains("add_node"), "should contain add_node fn");
+        assert!(output.contains('L'), "should have line numbers");
+        assert!(output.contains("calls:"), "should show call relationships");
+    }
+
+    #[test]
+    fn summary_partial_path_match() {
+        let (palace, root) = index_arbor();
+        // Full path exists
+        let full = root.join("crates/arbor-core/src/palace.rs");
+        assert!(!palace.nodes_in_file(&full).is_empty());
+
+        // Partial path should also find it via file_paths iteration
+        let found = palace
+            .file_paths()
+            .find(|p| p.ends_with("arbor-core/src/palace.rs"));
+        assert!(found.is_some(), "partial path should match");
+    }
+
+    #[test]
+    fn symbols_lists_all_traits() {
+        let (palace, _root) = index_arbor();
+        let traits: Vec<_> = palace
+            .node_weights()
+            .filter(|n| n.kind == NodeKind::Trait && n.visibility == Visibility::Public)
+            .collect();
+
+        assert!(!traits.is_empty(), "should find public traits");
+        assert!(
+            traits.iter().any(|n| n.name == "Analyzer"),
+            "should find Analyzer trait"
+        );
+    }
+
+    #[test]
+    fn symbols_lists_public_structs() {
+        let (palace, _root) = index_arbor();
+        let structs: Vec<_> = palace
+            .node_weights()
+            .filter(|n| n.kind == NodeKind::Struct && n.visibility == Visibility::Public)
+            .collect();
+
+        assert!(
+            structs.len() >= 5,
+            "should find multiple public structs, got {}",
+            structs.len()
+        );
+        let names: Vec<&str> = structs.iter().map(|n| n.name.as_str()).collect();
+        assert!(names.contains(&"Palace"), "should find Palace");
+        assert!(names.contains(&"Node"), "should find Node");
+    }
+
+    #[test]
+    fn symbols_kind_filter_works() {
+        let (palace, _root) = index_arbor();
+        let enums: Vec<_> = palace
+            .node_weights()
+            .filter(|n| n.kind == NodeKind::Enum)
+            .collect();
+
+        assert!(!enums.is_empty(), "should find enums");
+        let names: Vec<&str> = enums.iter().map(|n| n.name.as_str()).collect();
+        assert!(names.contains(&"NodeKind"), "should find NodeKind enum");
+        assert!(names.contains(&"EdgeKind"), "should find EdgeKind enum");
+    }
+}

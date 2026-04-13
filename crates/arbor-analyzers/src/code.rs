@@ -643,6 +643,22 @@ impl CodeAnalyzer {
             let idx = palace.add_node(node);
             palace.add_edge(parent_idx, idx, EdgeKind::Contains);
 
+            // Defer Implements edges (trait may be in another file)
+            // Rust: `impl Trait for Type` → "trait" field
+            if matches!(nk, NodeKind::Impl)
+                && let Some(trait_node) = ts_node.child_by_field_name("trait")
+            {
+                let trait_name = trait_node.utf8_text(source).unwrap_or("").to_string();
+                if !trait_name.is_empty() {
+                    palace.add_pending_impl(idx, trait_name);
+                }
+            }
+
+            // Java/C#/Kotlin: class implements/extends interface
+            if matches!(nk, NodeKind::Struct | NodeKind::Trait) {
+                Self::extract_implements(&ts_node, source, idx, palace);
+            }
+
             // Extract call edges from function bodies
             if matches!(nk, NodeKind::Function) {
                 Self::extract_calls(&ts_node, source, idx, config, palace);
@@ -729,6 +745,17 @@ impl CodeAnalyzer {
             && let Some(name_node) = node.child_by_field_name("name")
         {
             return name_node
+                .utf8_text(source)
+                .unwrap_or("anonymous")
+                .to_string();
+        }
+
+        // Rust: impl_item → name is the implementing type, not the trait
+        // `impl Trait for Type` has "type" field = Type, "trait" field = Trait
+        if kind == "impl_item"
+            && let Some(type_node) = node.child_by_field_name("type")
+        {
+            return type_node
                 .utf8_text(source)
                 .unwrap_or("anonymous")
                 .to_string();
@@ -988,6 +1015,80 @@ impl CodeAnalyzer {
         }
 
         Visibility::Private
+    }
+
+    /// Extract implements/extends edges for Java, C#, Kotlin classes.
+    /// Looks for interface lists and supertype references in class declarations.
+    fn extract_implements(
+        node: &tree_sitter::Node,
+        source: &[u8],
+        class_idx: petgraph::stable_graph::NodeIndex,
+        palace: &mut Palace,
+    ) {
+        // Java: `class Foo implements Bar, Baz` → "interfaces" field (type_list)
+        // Java: `class Foo extends Bar` → "superclass" field
+        // C#: `class Foo : Bar, IBaz` → "base_list" child node (base_list)
+        // Kotlin: `class Foo : Bar, Baz()` → "delegation_specifiers" child node
+        // Python: `class Foo(Base):` → "superclasses" field
+        let interface_fields = ["interfaces", "superclass", "superclasses"];
+        for field in &interface_fields {
+            if let Some(list_node) = node.child_by_field_name(field) {
+                Self::collect_type_names_as_impls(&list_node, source, class_idx, palace);
+            }
+        }
+
+        // C# base_list and Kotlin delegation_specifiers are child node kinds, not fields
+        for i in 0..node.child_count() {
+            if let Some(child) = node.child(i) {
+                let ck = child.kind();
+                if ck == "base_list"
+                    || ck == "delegation_specifiers"
+                    || ck == "delegation_specifier"
+                    || ck == "super_interfaces"
+                    || ck == "extends_interfaces"
+                    || ck == "extends_clause"
+                    || ck == "implements_clause"
+                {
+                    Self::collect_type_names_as_impls(&child, source, class_idx, palace);
+                }
+            }
+        }
+    }
+
+    /// Walk a type list node and defer Implements edges for each type identifier found.
+    /// Uses recursive search to handle different AST shapes across Java, C#, Kotlin.
+    fn collect_type_names_as_impls(
+        list_node: &tree_sitter::Node,
+        source: &[u8],
+        class_idx: petgraph::stable_graph::NodeIndex,
+        palace: &mut Palace,
+    ) {
+        // Collect the first identifier from each top-level child (each represents one supertype)
+        let mut cursor = list_node.walk();
+        for child in list_node.children(&mut cursor) {
+            if let Some(name) = Self::first_type_name(&child, source) {
+                palace.add_pending_impl(class_idx, name);
+            }
+        }
+    }
+
+    /// Find the first `type_identifier` / `identifier` / `simple_identifier` in a subtree (DFS).
+    fn first_type_name(node: &tree_sitter::Node, source: &[u8]) -> Option<String> {
+        let kind = node.kind();
+        if kind == "type_identifier" || kind == "identifier" || kind == "simple_identifier" {
+            return node
+                .utf8_text(source)
+                .ok()
+                .filter(|s| !s.is_empty())
+                .map(String::from);
+        }
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            if let Some(name) = Self::first_type_name(&child, source) {
+                return Some(name);
+            }
+        }
+        None
     }
 
     fn extract_calls(

@@ -16,11 +16,7 @@ fn analyze(fixture: &str) -> (Palace, Vec<ProjectFacet>) {
 }
 
 fn count_kind(palace: &Palace, kind: NodeKind) -> usize {
-    palace
-        .graph
-        .node_weights()
-        .filter(|n| n.kind == kind)
-        .count()
+    palace.node_weights().filter(|n| n.kind == kind).count()
 }
 
 fn find_fn<'a>(palace: &'a Palace, name: &str) -> Option<&'a arbor_core::graph::Node> {
@@ -165,9 +161,9 @@ fn rust_boot_screen() {
 fn rust_incremental_remove() {
     let (mut p, _) = analyze("rust-project");
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/rust-project");
-    let before = p.graph.node_count();
+    let before = p.node_count();
     p.remove_file(&root.join("src/auth.rs"));
-    assert!(p.graph.node_count() < before);
+    assert!(p.node_count() < before);
     assert!(
         p.find_by_name("login").is_empty(),
         "login should be gone after removing auth.rs"
@@ -728,7 +724,6 @@ fn schema_sql_tables() {
 fn schema_sql_columns() {
     let (p, _) = analyze("schema-project");
     let cols: Vec<_> = p
-        .graph
         .node_weights()
         .filter(|n| n.kind == NodeKind::Column)
         .collect();
@@ -1167,6 +1162,84 @@ fn java_search() {
         !results.is_empty(),
         "should find AuthService/AuthProvider by substring"
     );
+}
+
+// ============================================================
+//  IMPLEMENTS EDGES (cross-language)
+// ============================================================
+
+#[test]
+fn rust_implements_edges() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let root = std::fs::canonicalize(root).unwrap();
+    let mut p = Palace::new();
+    let registry = AnalyzerRegistry::new().unwrap();
+    registry.analyze_project(&root, &mut p).unwrap();
+    let refs = p.references("Analyzer");
+    let impls: Vec<_> = refs
+        .iter()
+        .filter(|r| matches!(r.kind, ReferenceKind::Implementation))
+        .filter_map(|r| p.get_node(r.node))
+        .collect();
+    assert!(
+        impls.len() >= 4,
+        "Analyzer trait should have >=4 implementations, got {}",
+        impls.len()
+    );
+    // Impl nodes should be named after the implementing type, not the trait
+    let impl_names: Vec<&str> = impls.iter().map(|n| n.name.as_str()).collect();
+    assert!(
+        impl_names.iter().all(|n| *n != "Analyzer"),
+        "impl names should be type names not trait names, got: {impl_names:?}"
+    );
+}
+
+#[test]
+fn java_implements_edges() {
+    let (p, _) = analyze("java-project");
+    let refs = p.references("AuthProvider");
+    let impls: Vec<_> = refs
+        .iter()
+        .filter(|r| matches!(r.kind, ReferenceKind::Implementation))
+        .filter_map(|r| p.get_node(r.node))
+        .collect();
+    assert!(
+        !impls.is_empty(),
+        "Java AuthService should implement AuthProvider"
+    );
+    assert_eq!(impls[0].name, "AuthService");
+}
+
+#[test]
+fn csharp_implements_edges() {
+    let (p, _) = analyze("csharp-project");
+    let refs = p.references("IAuthProvider");
+    let impls: Vec<_> = refs
+        .iter()
+        .filter(|r| matches!(r.kind, ReferenceKind::Implementation))
+        .filter_map(|r| p.get_node(r.node))
+        .collect();
+    assert!(
+        !impls.is_empty(),
+        "C# AuthService should implement IAuthProvider"
+    );
+    assert_eq!(impls[0].name, "AuthService");
+}
+
+#[test]
+fn kotlin_implements_edges() {
+    let (p, _) = analyze("kotlin-project");
+    let refs = p.references("AuthProvider");
+    let impls: Vec<_> = refs
+        .iter()
+        .filter(|r| matches!(r.kind, ReferenceKind::Implementation))
+        .filter_map(|r| p.get_node(r.node))
+        .collect();
+    assert!(
+        !impls.is_empty(),
+        "Kotlin AuthService should implement AuthProvider"
+    );
+    assert_eq!(impls[0].name, "AuthService");
 }
 
 // ============================================================

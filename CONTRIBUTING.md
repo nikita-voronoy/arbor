@@ -135,7 +135,7 @@ tests/
 ## Running Tests
 
 ```bash
-cargo test --all          # all 70 tests
+cargo test --all          # all 123 tests
 cargo test -p arbor-analyzers  # just analyzer tests
 cargo clippy --all        # lint
 cargo fmt --all           # format

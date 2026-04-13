@@ -39,17 +39,20 @@ pub struct Tunnel {
 /// The Palace is the top-level container holding the graph and organizational structure
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Palace {
-    pub graph: CodeGraph,
+    pub(crate) graph: CodeGraph,
     pub wings: Vec<Wing>,
     pub rooms: Vec<Room>,
     pub tunnels: Vec<Tunnel>,
     /// Map from file path to the nodes defined in that file
-    pub file_index: FxHashMap<PathBuf, Vec<NodeIndex>>,
+    pub(crate) file_index: FxHashMap<PathBuf, Vec<NodeIndex>>,
     /// Map from symbol name to node indices (for fast lookup)
-    pub name_index: FxHashMap<String, Vec<NodeIndex>>,
+    pub(crate) name_index: FxHashMap<String, Vec<NodeIndex>>,
     /// Pending call edges to resolve after all files are indexed (`caller_idx`, `callee_name`)
     #[serde(default)]
-    pub pending_calls: Vec<(NodeIndex, String)>,
+    pub(crate) pending_calls: Vec<(NodeIndex, String)>,
+    /// Pending impl→trait edges to resolve after all files are indexed
+    #[serde(default)]
+    pub(crate) pending_impls: Vec<(NodeIndex, String)>,
 }
 
 impl Palace {
@@ -63,6 +66,7 @@ impl Palace {
             file_index: FxHashMap::default(),
             name_index: FxHashMap::default(),
             pending_calls: Vec::new(),
+            pending_impls: Vec::new(),
         }
     }
 
@@ -103,9 +107,51 @@ impl Palace {
         self.graph.node_weight(idx)
     }
 
+    /// Get the number of nodes in the graph
+    #[must_use]
+    pub fn node_count(&self) -> usize {
+        self.graph.node_count()
+    }
+
+    /// Iterate over all nodes in the graph
+    pub fn node_weights(&self) -> impl Iterator<Item = &Node> {
+        self.graph.node_weights()
+    }
+
+    /// Check if a node is a real symbol (not a File-level node).
+    #[must_use]
+    pub fn is_real_symbol(&self, idx: NodeIndex) -> bool {
+        self.get_node(idx)
+            .is_some_and(|n| !matches!(n.kind, NodeKind::File))
+    }
+
+    /// Get the names of symbols called by a given node.
+    #[must_use]
+    pub fn callees(&self, idx: NodeIndex) -> Vec<&str> {
+        use petgraph::Direction;
+        use petgraph::visit::EdgeRef;
+
+        self.graph
+            .edges_directed(idx, Direction::Outgoing)
+            .filter(|e| matches!(e.weight(), EdgeKind::Calls))
+            .filter_map(|e| self.get_node(e.target()))
+            .map(|n| n.name.as_str())
+            .collect()
+    }
+
+    /// Iterate over all indexed file paths
+    pub fn file_paths(&self) -> impl Iterator<Item = &Path> {
+        self.file_index.keys().map(PathBuf::as_path)
+    }
+
     /// Record a call edge to be resolved after all files are indexed
     pub fn add_pending_call(&mut self, caller: NodeIndex, callee_name: String) {
         self.pending_calls.push((caller, callee_name));
+    }
+
+    /// Record an impl→trait edge to be resolved after all files are indexed
+    pub fn add_pending_impl(&mut self, impl_idx: NodeIndex, trait_name: String) {
+        self.pending_impls.push((impl_idx, trait_name));
     }
 
     /// Resolve all pending call edges. Call this after all files have been analyzed.
@@ -133,6 +179,20 @@ impl Palace {
                     if !exists {
                         self.graph.add_edge(caller_idx, target, EdgeKind::Calls);
                     }
+                }
+            }
+        }
+
+        // Resolve pending impl→trait edges
+        let pending_impls = std::mem::take(&mut self.pending_impls);
+        for (impl_idx, trait_name) in pending_impls {
+            let targets: Vec<NodeIndex> = self.find_by_name(&trait_name).to_vec();
+            for target in targets {
+                if let Some(tn) = self.get_node(target)
+                    && matches!(tn.kind, NodeKind::Trait)
+                {
+                    self.graph.add_edge(impl_idx, target, EdgeKind::Implements);
+                    break;
                 }
             }
         }
@@ -175,7 +235,24 @@ impl Palace {
                 NodeKind::Trait => stats.traits += 1,
                 NodeKind::Enum => stats.enums += 1,
                 NodeKind::Module => stats.modules += 1,
-                _ => stats.other += 1,
+                NodeKind::Impl
+                | NodeKind::EnumVariant
+                | NodeKind::Constant
+                | NodeKind::TypeAlias
+                | NodeKind::Macro
+                | NodeKind::Role
+                | NodeKind::Task
+                | NodeKind::Handler
+                | NodeKind::Variable
+                | NodeKind::Template
+                | NodeKind::Resource
+                | NodeKind::Document
+                | NodeKind::Section
+                | NodeKind::CodeBlock
+                | NodeKind::Table
+                | NodeKind::Column
+                | NodeKind::Endpoint
+                | NodeKind::Message => stats.other += 1,
             }
             stats.total_lines += node.span.lines() as usize;
         }
@@ -219,7 +296,7 @@ impl Palace {
             if let (Some(&new_from), Some(&new_to)) =
                 (index_map.get(&edge.source()), index_map.get(&edge.target()))
             {
-                self.add_edge(new_from, new_to, edge.weight().clone());
+                self.add_edge(new_from, new_to, *edge.weight());
             }
         }
 
