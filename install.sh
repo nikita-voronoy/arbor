@@ -124,5 +124,85 @@ else
   echo "  claude mcp add arbor -- arbor"
 fi
 
+# --- Configure hooks to prefer arbor MCP ---
+SETTINGS="$HOME/.claude/settings.json"
+
+if command -v jq &>/dev/null; then
+  info "Configuring PreToolUse hook for arbor preference..."
+
+  mkdir -p "$HOME/.claude"
+
+  HOOK_ENTRY='{
+    "matcher": "Grep|Glob",
+    "hooks": [{
+      "type": "command",
+      "command": "echo '\''{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"additionalContext\":\"STOP: Prefer arbor MCP tools (search, references, skeleton, compact, boot) over Grep/Glob for code navigation. Fall back to Grep/Glob only for string literals, comments, or regex patterns.\"}}'\''",
+      "statusMessage": "Checking arbor preference..."
+    }]
+  }'
+
+  if [ -f "$SETTINGS" ]; then
+    # Check if a Grep|Glob hook already exists
+    if jq -e '.hooks.PreToolUse[]? | select(.matcher == "Grep|Glob")' "$SETTINGS" &>/dev/null; then
+      info "PreToolUse hook for Grep|Glob already configured — skipping."
+    else
+      # Merge into existing settings
+      jq --argjson hook "$HOOK_ENTRY" '.hooks.PreToolUse = ((.hooks.PreToolUse // []) + [$hook])' "$SETTINGS" > "$SETTINGS.tmp" \
+        && mv "$SETTINGS.tmp" "$SETTINGS"
+      ok "PreToolUse hook added to $SETTINGS"
+    fi
+  else
+    # Create settings.json with just the hook
+    jq -n --argjson hook "$HOOK_ENTRY" '{"hooks":{"PreToolUse":[$hook]}}' > "$SETTINGS"
+    ok "Created $SETTINGS with PreToolUse hook"
+  fi
+else
+  info "jq not found — skipping hook configuration."
+  info "To manually configure, add a PreToolUse hook for Grep|Glob in $SETTINGS"
+fi
+
+# --- Add CLAUDE.md instructions ---
+CLAUDE_MD="$HOME/.claude/CLAUDE.md"
+
+MARKER_START='<!-- arbor:start -->'
+MARKER_END='<!-- arbor:end -->'
+
+ARBOR_BLOCK="${MARKER_START}
+## Code navigation: use arbor MCP first
+
+When exploring a codebase or searching for code, **always prefer arbor MCP tools over grep/glob**:
+
+- **Instead of grep for a symbol** → use \`mcp__arbor__search\` (fuzzy, deduped, ranked)
+- **Instead of grep for \"who calls X\"** → use \`mcp__arbor__references\` (shows Definition, Call, TypeReference)
+- **Instead of reading many files to understand structure** → use \`mcp__arbor__boot\` first, then \`mcp__arbor__skeleton\` or \`mcp__arbor__compact\`
+- **Instead of manually tracing dependencies** → use \`mcp__arbor__dependencies\` or \`mcp__arbor__impact\`
+- **After making changes to many files** → call \`mcp__arbor__reindex\` to refresh the index
+
+Start every new project session with \`mcp__arbor__boot\` to get the project overview.
+
+Always try arbor first, even for terms that might appear in comments or string literals. Fall back to grep/glob only when:
+- arbor is not available
+- arbor returned nothing useful and you need raw text/regex search as a last resort
+${MARKER_END}"
+
+if [ -f "$CLAUDE_MD" ]; then
+  if grep -q "$MARKER_START" "$CLAUDE_MD"; then
+    info "CLAUDE.md already contains arbor block — replacing..."
+    # Remove old block and insert new one
+    sed "/$MARKER_START/,/$MARKER_END/d" "$CLAUDE_MD" > "$CLAUDE_MD.tmp"
+    printf '%s\n' "$ARBOR_BLOCK" >> "$CLAUDE_MD.tmp"
+    mv "$CLAUDE_MD.tmp" "$CLAUDE_MD"
+    ok "Arbor block updated in $CLAUDE_MD"
+  else
+    info "Appending arbor instructions to $CLAUDE_MD..."
+    printf '\n%s\n' "$ARBOR_BLOCK" >> "$CLAUDE_MD"
+    ok "Arbor instructions added to $CLAUDE_MD"
+  fi
+else
+  mkdir -p "$HOME/.claude"
+  printf '%s\n' "$ARBOR_BLOCK" > "$CLAUDE_MD"
+  ok "Created $CLAUDE_MD with arbor instructions"
+fi
+
 echo ""
 echo -e "Try it: ${BLUE}arbor --compact .${RESET}"

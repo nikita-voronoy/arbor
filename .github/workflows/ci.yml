@@ -8,6 +8,9 @@ on:
       - "tests/**"
       - "Cargo.toml"
       - "Cargo.lock"
+      - "install.*"
+      - "uninstall.*"
+      - "test_install.*"
   pull_request:
     branches: [main]
 
@@ -27,6 +30,7 @@ jobs:
     timeout-minutes: 2
     outputs:
       code: ${{ steps.filter.outputs.code }}
+      installer: ${{ steps.filter.outputs.installer }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -38,6 +42,10 @@ jobs:
               - 'tests/**'
               - 'Cargo.toml'
               - 'Cargo.lock'
+            installer:
+              - 'install.*'
+              - 'uninstall.*'
+              - 'test_install.*'
 
   # Conventional commits — only on PRs
   lint-pr:
@@ -84,3 +92,34 @@ jobs:
 
       - name: Test
         run: cargo test --all
+
+  # Installer tests — bash (Linux + macOS)
+  installer-bash:
+    name: Installer (bash)
+    needs: changes
+    if: needs.changes.outputs.installer == 'true'
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install jq
+        if: runner.os == 'Linux'
+        run: sudo apt-get -qq install -y jq
+      - name: Run installer tests
+        run: bash test_install.sh
+
+  # Installer tests — PowerShell (Windows)
+  installer-pwsh:
+    name: Installer (pwsh)
+    needs: changes
+    if: needs.changes.outputs.installer == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run installer tests
+        shell: pwsh
+        run: ./test_install.ps1
