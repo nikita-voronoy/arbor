@@ -57,12 +57,12 @@ One command &mdash; installs arbor and connects it to Claude Code:
 
 **macOS / Linux:**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/nikita-voronoy/arbor/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/nikita-voronoy/arbor/main/scripts/install.sh | bash
 ```
 
 **Windows (PowerShell):**
 ```powershell
-irm https://raw.githubusercontent.com/nikita-voronoy/arbor/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/nikita-voronoy/arbor/main/scripts/install.ps1 | iex
 ```
 
 <details>
@@ -188,12 +188,12 @@ No additional IDE configuration needed.
 
 **macOS / Linux:**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/nikita-voronoy/arbor/main/uninstall.sh | bash
+curl -fsSL https://raw.githubusercontent.com/nikita-voronoy/arbor/main/scripts/uninstall.sh | bash
 ```
 
 **Windows (PowerShell):**
 ```powershell
-irm https://raw.githubusercontent.com/nikita-voronoy/arbor/main/uninstall.ps1 | iex
+irm https://raw.githubusercontent.com/nikita-voronoy/arbor/main/scripts/uninstall.ps1 | iex
 ```
 
 This removes the binary, MCP registration, hooks, and CLAUDE.md instructions.
