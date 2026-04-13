@@ -80,6 +80,14 @@ const IGNORED_DIRS: &[&str] = &[
     "vendor",
     "third_party",
     "testdata",
+    "dist",
+    "build",
+    ".next",
+    ".nuxt",
+    "out",
+    "__generated__",
+    ".output",
+    "coverage",
 ];
 
 /// Check if a path should be ignored based on directory components
