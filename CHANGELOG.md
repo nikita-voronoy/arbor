@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.1.4](https://github.com/nikita-voronoy/arbor/compare/arbor-v0.1.3...arbor-v0.1.4) (2026-04-13)
+
+
+### Features
+
+* add Java language support ([#18](https://github.com/nikita-voronoy/arbor/issues/18)) ([90ac317](https://github.com/nikita-voronoy/arbor/commit/90ac31799f9ce34ebd188984b5dcf4660b182053))
+
+
+### Bug Fixes
+
+* **ci:** use create-pull-request in sync-languages workflow ([#19](https://github.com/nikita-voronoy/arbor/issues/19)) ([3771447](https://github.com/nikita-voronoy/arbor/commit/3771447e42c531d4a49a225f4d7bbd36d36bec72))
+* improve language analysis, remove unwrap, fix 10 code quality issues ([#20](https://github.com/nikita-voronoy/arbor/issues/20)) ([7f180a7](https://github.com/nikita-voronoy/arbor/commit/7f180a7cbf61b6046739d5c17820a9b84bdb8e33))
+
+
+### Documentation
+
+* add configuration examples to README ([#16](https://github.com/nikita-voronoy/arbor/issues/16)) ([32c284f](https://github.com/nikita-voronoy/arbor/commit/32c284fb87117ca6a27797b2a4c28eb0a876e4d7))
+* sync language table from code ([#21](https://github.com/nikita-voronoy/arbor/issues/21)) ([5cb348e](https://github.com/nikita-voronoy/arbor/commit/5cb348e23895c29ed096207074ef61b2b0b7e324))
+
 ## [0.1.3](https://github.com/nikita-voronoy/arbor/compare/arbor-v0.1.2...arbor-v0.1.3) (2026-04-13)
 
 
