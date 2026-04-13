@@ -9,7 +9,7 @@ use rmcp::{
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::fmt::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub struct ArborServer {
     palace: RwLock<Palace>,
@@ -35,7 +35,7 @@ impl ArborServer {
 
             // Hash indexed files for next time (only files Palace knows about)
             let mut hashes = arbor_persist::hasher::FileHashes::new();
-            for path in palace.file_index.keys() {
+            for path in palace.file_paths() {
                 let _ = hashes.check_file(path);
             }
             hashes.save(&root)?;
@@ -46,7 +46,7 @@ impl ArborServer {
 
             // Only walk files the analyzers care about (not ALL files)
             let current_files: std::collections::HashSet<PathBuf> =
-                palace.file_index.keys().cloned().collect();
+                palace.file_paths().map(Path::to_path_buf).collect();
 
             // Check for deleted files
             let tracked: Vec<PathBuf> = hashes
@@ -168,12 +168,23 @@ pub struct SymbolParams {
     pub symbol: String,
 }
 
+/// Direction for dependency traversal
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum DependencyDirection {
+    /// What this symbol depends on
+    #[default]
+    Outgoing,
+    /// What depends on this symbol
+    Incoming,
+}
+
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct DependenciesParams {
     /// Symbol name
     pub symbol: String,
     /// Direction: 'outgoing' (default) or 'incoming'
-    pub direction: Option<String>,
+    pub direction: Option<DependencyDirection>,
     /// Max traversal depth (default 5)
     pub max_depth: Option<usize>,
 }
@@ -302,9 +313,9 @@ impl ArborServer {
         };
 
         let max_depth = params.0.max_depth.unwrap_or(5);
-        let incoming = params.0.direction.as_deref() == Some("incoming");
+        let direction = params.0.direction.unwrap_or_default();
 
-        let deps = if incoming {
+        let deps = if direction == DependencyDirection::Incoming {
             palace.impact(node_idx, max_depth)
         } else {
             palace.dependencies(node_idx, max_depth)
@@ -316,7 +327,7 @@ impl ArborServer {
                 params.0.symbol
             );
         };
-        let dir_label = if incoming {
+        let dir_label = if direction == DependencyDirection::Incoming {
             "Dependents of"
         } else {
             "Dependencies of"
@@ -333,14 +344,7 @@ impl ArborServer {
         let mut out = format!("{dir_label} '{}' ({} found):\n", node.name, deps.len());
         for (dep_idx, depth) in &deps {
             if let Some(dep) = palace.get_node(*dep_idx) {
-                let kind = match dep.kind {
-                    arbor_core::graph::NodeKind::Function => "fn",
-                    arbor_core::graph::NodeKind::Struct => "struct",
-                    arbor_core::graph::NodeKind::Trait => "trait",
-                    arbor_core::graph::NodeKind::Macro => "macro",
-                    arbor_core::graph::NodeKind::EnumVariant => "variant",
-                    _ => "item",
-                };
+                let kind = dep.kind.label();
                 let _ = writeln!(
                     out,
                     "  [depth {depth}] {kind} {} ({}:{})",
@@ -419,16 +423,7 @@ impl ArborServer {
         );
         for idx in results.iter().take(20) {
             if let Some(node) = palace.get_node(*idx) {
-                let kind = match node.kind {
-                    arbor_core::graph::NodeKind::Function => "fn",
-                    arbor_core::graph::NodeKind::Struct => "struct",
-                    arbor_core::graph::NodeKind::Trait => "trait",
-                    arbor_core::graph::NodeKind::Enum => "enum",
-                    arbor_core::graph::NodeKind::EnumVariant => "variant",
-                    arbor_core::graph::NodeKind::Macro => "macro",
-                    arbor_core::graph::NodeKind::Module => "mod",
-                    _ => "item",
-                };
+                let kind = node.kind.label();
                 let sig = node.signature.as_deref().unwrap_or(&node.name);
                 let _ = writeln!(
                     out,

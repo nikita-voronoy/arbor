@@ -6,7 +6,26 @@ pub mod schema;
 use anyhow::Result;
 use arbor_core::palace::Palace;
 use arbor_detect::ProjectFacet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+/// Walk files under `root` respecting `.gitignore`, filtering by file extension.
+fn walk_files_by_extension(root: &Path, extensions: &[&str]) -> Vec<PathBuf> {
+    ignore::WalkBuilder::new(root)
+        .hidden(true)
+        .git_ignore(true)
+        .git_global(true)
+        .git_exclude(true)
+        .build()
+        .filter_map(std::result::Result::ok)
+        .filter(|entry| entry.file_type().is_some_and(|ft| ft.is_file()))
+        .map(ignore::DirEntry::into_path)
+        .filter(|path| {
+            path.extension()
+                .and_then(|e| e.to_str())
+                .is_some_and(|ext| extensions.contains(&ext))
+        })
+        .collect()
+}
 
 /// Trait that all analyzers implement
 pub trait Analyzer {

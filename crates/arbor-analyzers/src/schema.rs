@@ -3,7 +3,7 @@ use arbor_core::graph::{EdgeKind, Node, NodeKind, Span, Visibility};
 use arbor_core::palace::Palace;
 use arbor_detect::ProjectFacet;
 use regex::Regex;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::Analyzer;
 
@@ -267,21 +267,10 @@ impl Analyzer for SchemaAnalyzer {
 
 impl SchemaAnalyzer {
     fn walk_and_parse(&self, dir: &Path, palace: &mut Palace) -> Result<()> {
-        let files: Vec<PathBuf> = ignore::WalkBuilder::new(dir)
-            .hidden(true)
-            .git_ignore(true)
-            .git_global(true)
-            .git_exclude(true)
-            .build()
-            .filter_map(std::result::Result::ok)
-            .filter(|entry| entry.file_type().is_some_and(|ft| ft.is_file()))
-            .map(ignore::DirEntry::into_path)
-            .collect();
-
+        let files = crate::walk_files_by_extension(dir, &["sql", "proto", "yml", "yaml", "json"]);
         for path in files {
             self.dispatch_file(&path, palace)?;
         }
-
         Ok(())
     }
 

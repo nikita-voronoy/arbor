@@ -16,11 +16,7 @@ fn analyze(fixture: &str) -> (Palace, Vec<ProjectFacet>) {
 }
 
 fn count_kind(palace: &Palace, kind: NodeKind) -> usize {
-    palace
-        .graph
-        .node_weights()
-        .filter(|n| n.kind == kind)
-        .count()
+    palace.node_weights().filter(|n| n.kind == kind).count()
 }
 
 fn find_fn<'a>(palace: &'a Palace, name: &str) -> Option<&'a arbor_core::graph::Node> {
@@ -165,9 +161,9 @@ fn rust_boot_screen() {
 fn rust_incremental_remove() {
     let (mut p, _) = analyze("rust-project");
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/rust-project");
-    let before = p.graph.node_count();
+    let before = p.node_count();
     p.remove_file(&root.join("src/auth.rs"));
-    assert!(p.graph.node_count() < before);
+    assert!(p.node_count() < before);
     assert!(
         p.find_by_name("login").is_empty(),
         "login should be gone after removing auth.rs"
@@ -728,7 +724,6 @@ fn schema_sql_tables() {
 fn schema_sql_columns() {
     let (p, _) = analyze("schema-project");
     let cols: Vec<_> = p
-        .graph
         .node_weights()
         .filter(|n| n.kind == NodeKind::Column)
         .collect();

@@ -1,5 +1,6 @@
 use petgraph::stable_graph::StableGraph;
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use std::path::PathBuf;
 
 /// Unified node kinds across all project types
@@ -38,6 +39,73 @@ pub enum NodeKind {
     Message,
 }
 
+impl NodeKind {
+    /// Full label for skeleton display (e.g. "fn", "struct", "trait")
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::File => "file",
+            Self::Module => "mod",
+            Self::Function => "fn",
+            Self::Struct => "struct",
+            Self::Trait => "trait",
+            Self::Impl => "impl",
+            Self::Enum => "enum",
+            Self::EnumVariant => "variant",
+            Self::Constant => "const",
+            Self::TypeAlias => "type",
+            Self::Macro => "macro",
+            Self::Role => "role",
+            Self::Task => "task",
+            Self::Handler => "handler",
+            Self::Variable => "var",
+            Self::Template => "tpl",
+            Self::Resource => "res",
+            Self::Document => "doc",
+            Self::Section => "sec",
+            Self::CodeBlock => "code",
+            Self::Table => "tbl",
+            Self::Column => "col",
+            Self::Endpoint => "ep",
+            Self::Message => "msg",
+        }
+    }
+
+    /// Short tag for compact skeleton display (e.g. "fn", "st", "tr")
+    #[must_use]
+    pub const fn short_tag(self) -> &'static str {
+        match self {
+            Self::Function => "fn",
+            Self::Struct => "st",
+            Self::Trait => "tr",
+            Self::Enum => "en",
+            Self::Module => "mod",
+            Self::Constant => "co",
+            Self::Macro => "def",
+            Self::TypeAlias => "ty",
+            Self::Role => "role",
+            Self::Task => "task",
+            Self::Handler => "hnd",
+            Self::Variable => "var",
+            Self::Template => "tpl",
+            Self::Resource => "res",
+            Self::Document => "doc",
+            Self::Section => "sec",
+            Self::CodeBlock => "code",
+            Self::Table => "tbl",
+            Self::Endpoint => "ep",
+            Self::Message => "msg",
+            Self::EnumVariant | Self::Column | Self::Impl | Self::File => "",
+        }
+    }
+}
+
+impl fmt::Display for NodeKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.label())
+    }
+}
+
 /// A node in the code graph
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Node {
@@ -65,7 +133,7 @@ pub enum Visibility {
 }
 
 /// Edge kinds representing relationships between nodes
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EdgeKind {
     Contains,   // parent contains child (module→function)
     Calls,      // function calls function

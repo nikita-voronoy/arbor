@@ -70,7 +70,12 @@ impl Palace {
                         EdgeKind::Imports => ReferenceKind::Import,
                         EdgeKind::TypeRef => ReferenceKind::TypeReference,
                         EdgeKind::Implements => ReferenceKind::Implementation,
-                        _ => ReferenceKind::Other,
+                        EdgeKind::Contains
+                        | EdgeKind::DependsOn
+                        | EdgeKind::Notifies
+                        | EdgeKind::References
+                        | EdgeKind::LinksTo
+                        | EdgeKind::Includes => ReferenceKind::Other,
                     };
                     results.push(Reference { node: source, kind });
                 }

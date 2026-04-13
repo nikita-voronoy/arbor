@@ -3,7 +3,7 @@ use arbor_core::graph::{EdgeKind, Node, NodeKind, Span, Visibility};
 use arbor_core::palace::Palace;
 use arbor_detect::ProjectFacet;
 use pulldown_cmark::{Event, HeadingLevel, Parser, Tag, TagEnd};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::Analyzer;
 
@@ -16,22 +16,8 @@ impl DocsAnalyzer {
         Self
     }
 
-    fn walk_md_files(&self, root: &Path) -> Vec<PathBuf> {
-        ignore::WalkBuilder::new(root)
-            .hidden(true)
-            .git_ignore(true)
-            .git_global(true)
-            .git_exclude(true)
-            .build()
-            .filter_map(std::result::Result::ok)
-            .filter(|entry| entry.file_type().is_some_and(|ft| ft.is_file()))
-            .map(ignore::DirEntry::into_path)
-            .filter(|path| {
-                path.extension()
-                    .and_then(|e| e.to_str())
-                    .is_some_and(|ext| ext == "md" || ext == "mdx" || ext == "rst")
-            })
-            .collect()
+    fn walk_md_files(root: &Path) -> Vec<std::path::PathBuf> {
+        crate::walk_files_by_extension(root, &["md", "mdx", "rst"])
     }
 
     fn parse_markdown(&self, path: &Path, palace: &mut Palace) -> Result<()> {
@@ -138,7 +124,7 @@ impl Analyzer for DocsAnalyzer {
     }
 
     fn analyze(&self, root: &Path, palace: &mut Palace) -> Result<()> {
-        let files = self.walk_md_files(root);
+        let files = Self::walk_md_files(root);
         for file in files {
             self.parse_markdown(&file, palace)?;
         }

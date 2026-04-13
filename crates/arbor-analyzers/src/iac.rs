@@ -367,18 +367,8 @@ impl TerraformAnalyzer {
         })
     }
 
-    fn walk_tf_files(&self, root: &Path) -> Vec<PathBuf> {
-        ignore::WalkBuilder::new(root)
-            .hidden(true)
-            .git_ignore(true)
-            .git_global(true)
-            .git_exclude(true)
-            .build()
-            .filter_map(std::result::Result::ok)
-            .filter(|entry| entry.file_type().is_some_and(|ft| ft.is_file()))
-            .map(ignore::DirEntry::into_path)
-            .filter(|path| path.extension().and_then(|e| e.to_str()) == Some("tf"))
-            .collect()
+    fn walk_tf_files(root: &Path) -> Vec<PathBuf> {
+        crate::walk_files_by_extension(root, &["tf"])
     }
 
     fn parse_tf_file(&self, path: &Path, palace: &mut Palace) -> Result<()> {
@@ -478,7 +468,7 @@ impl Analyzer for TerraformAnalyzer {
     }
 
     fn analyze(&self, root: &Path, palace: &mut Palace) -> Result<()> {
-        let files = self.walk_tf_files(root);
+        let files = Self::walk_tf_files(root);
         for file in files {
             self.parse_tf_file(&file, palace)?;
         }
