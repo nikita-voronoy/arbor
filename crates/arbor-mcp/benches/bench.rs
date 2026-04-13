@@ -1,6 +1,7 @@
 use arbor_analyzers::AnalyzerRegistry;
 use arbor_core::palace::Palace;
-use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
+use std::hint::black_box;
 use std::path::PathBuf;
 
 fn fixture(name: &str) -> PathBuf {
@@ -245,8 +246,8 @@ fn bench_incremental(c: &mut Criterion) {
                 palace
             },
             |mut palace| {
-                palace.remove_file(&file);
                 use arbor_analyzers::Analyzer;
+                palace.remove_file(&file);
                 analyzer.analyze_file(&file, &source, &mut palace).unwrap();
                 black_box(&palace);
             },

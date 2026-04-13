@@ -15,8 +15,7 @@ async fn main() -> Result<()> {
     let root = args
         .iter()
         .find(|a| !a.starts_with('-') && *a != &args[0])
-        .map(PathBuf::from)
-        .unwrap_or_else(|| std::env::current_dir().unwrap());
+        .map_or_else(|| std::env::current_dir().unwrap(), PathBuf::from);
 
     let root = std::fs::canonicalize(&root)?;
 
@@ -25,7 +24,7 @@ async fn main() -> Result<()> {
 
     if cli_mode || compact_mode {
         let boot = server.boot_cli();
-        println!("{}", boot);
+        println!("{boot}");
         if compact_mode {
             println!("{}", server.compact_cli());
         } else {

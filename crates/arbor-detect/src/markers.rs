@@ -19,7 +19,8 @@ pub enum ProjectFacet {
 }
 
 impl ProjectFacet {
-    pub fn label(&self) -> &'static str {
+    #[must_use]
+    pub const fn label(&self) -> &'static str {
         match self {
             Self::Rust => "rust",
             Self::Python => "python",
@@ -39,6 +40,7 @@ impl ProjectFacet {
 }
 
 /// Detect project facets by scanning for marker files in the root directory
+#[must_use]
 pub fn detect(root: &Path) -> Vec<ProjectFacet> {
     let mut facets = Vec::new();
 
@@ -110,14 +112,11 @@ pub fn detect(root: &Path) -> Vec<ProjectFacet> {
 }
 
 fn has_extension_in_root(root: &Path, ext: &str) -> bool {
-    root.read_dir()
-        .ok()
-        .map(|entries| {
-            entries
-                .filter_map(|e| e.ok())
-                .any(|e| e.path().extension().map(|e| e == ext).unwrap_or(false))
-        })
-        .unwrap_or(false)
+    root.read_dir().ok().is_some_and(|entries| {
+        entries
+            .filter_map(std::result::Result::ok)
+            .any(|e| e.path().extension().is_some_and(|e| e == ext))
+    })
 }
 
 /// Check immediate subdirectories (one level) for files with given extension.
@@ -134,29 +133,26 @@ fn has_extension_in_subdir(root: &Path, ext: &str) -> bool {
         "bin",
         "obj",
     ];
-    root.read_dir()
-        .ok()
-        .map(|entries| {
-            entries.filter_map(|e| e.ok()).any(|e| {
-                let p = e.path();
-                if !p.is_dir() {
-                    return false;
-                }
-                let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                if name.starts_with('.') || SKIP.contains(&name) {
-                    return false;
-                }
-                has_extension_in_root(&p, ext)
-            })
+    root.read_dir().ok().is_some_and(|entries| {
+        entries.filter_map(std::result::Result::ok).any(|e| {
+            let p = e.path();
+            if !p.is_dir() {
+                return false;
+            }
+            let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            if name.starts_with('.') || SKIP.contains(&name) {
+                return false;
+            }
+            has_extension_in_root(&p, ext)
         })
-        .unwrap_or(false)
+    })
 }
 
 fn is_mostly_markdown(root: &Path) -> bool {
     let entries: Vec<_> = root
         .read_dir()
         .ok()
-        .map(|e| e.filter_map(|e| e.ok()).collect())
+        .map(|e| e.filter_map(std::result::Result::ok).collect())
         .unwrap_or_default();
 
     if entries.is_empty() {
@@ -168,8 +164,7 @@ fn is_mostly_markdown(root: &Path) -> bool {
         .filter(|e| {
             e.path()
                 .extension()
-                .map(|ext| ext == "md" || ext == "mdx" || ext == "rst")
-                .unwrap_or(false)
+                .is_some_and(|ext| ext == "md" || ext == "mdx" || ext == "rst")
         })
         .count();
 
