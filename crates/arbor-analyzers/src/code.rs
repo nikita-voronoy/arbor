@@ -246,6 +246,25 @@ impl CodeAnalyzer {
             },
         );
 
+        languages.insert(
+            "java",
+            LanguageConfig {
+                language: tree_sitter_java::LANGUAGE.into(),
+                extensions: &["java"],
+                queries: NodeQueries {
+                    function: &["method_declaration", "constructor_declaration"],
+                    struct_like: &["class_declaration", "record_declaration"],
+                    trait_like: &["interface_declaration", "annotation_type_declaration"],
+                    impl_block: &[],
+                    enum_def: &["enum_declaration"],
+                    enum_variant: &["enum_constant"],
+                    macro_def: &[],
+                    use_decl: &["import_declaration"],
+                    call_expr: &["method_invocation", "object_creation_expression"],
+                },
+            },
+        );
+
         Self { languages }
     }
 
@@ -267,6 +286,7 @@ impl CodeAnalyzer {
                 "cpp" => "C++",
                 "csharp" => "C#",
                 "kotlin" => "Kotlin",
+                "java" => "Java",
                 other => return other.to_string(),
             }
             .to_string()
@@ -282,6 +302,7 @@ impl CodeAnalyzer {
             "cpp",
             "csharp",
             "kotlin",
+            "java",
         ];
         let mut rows = Vec::new();
         for &key in &order {
@@ -716,7 +737,7 @@ impl CodeAnalyzer {
             return Some(sig.to_string());
         }
 
-        // C#: method_declaration, constructor_declaration → everything before body
+        // C#/Java: method_declaration, constructor_declaration → everything before body
         if kind == "method_declaration" || kind == "constructor_declaration" {
             let start = node.start_byte();
             let end = node
@@ -813,19 +834,29 @@ impl CodeAnalyzer {
                     }
                 }
                 // Kotlin: modifiers → visibility_modifier → public/private/internal/protected
+                // Java: modifiers → direct keyword children (public/private/protected)
                 if ck == "modifiers" {
                     for j in 0..child.child_count() {
-                        if let Some(mod_child) = child.child(j)
-                            && mod_child.kind() == "visibility_modifier"
-                        {
-                            let text = mod_child.utf8_text(source).unwrap_or("");
-                            if text.contains("public") {
+                        if let Some(mod_child) = child.child(j) {
+                            let mk = mod_child.kind();
+                            // Kotlin: visibility_modifier wrapper
+                            if mk == "visibility_modifier" {
+                                let text = mod_child.utf8_text(source).unwrap_or("");
+                                if text.contains("public") {
+                                    return Visibility::Public;
+                                }
+                                if text.contains("internal") {
+                                    return Visibility::Crate;
+                                }
+                                if text.contains("private") || text.contains("protected") {
+                                    return Visibility::Private;
+                                }
+                            }
+                            // Java: direct modifier keywords
+                            if mk == "public" {
                                 return Visibility::Public;
                             }
-                            if text.contains("internal") {
-                                return Visibility::Crate;
-                            }
-                            if text.contains("private") || text.contains("protected") {
+                            if mk == "private" || mk == "protected" {
                                 return Visibility::Private;
                             }
                         }
@@ -885,9 +916,11 @@ impl CodeAnalyzer {
 
         if config.queries.call_expr.contains(&node.kind()) {
             // Extract the function name from the call
-            // Most languages use a "function" field; Kotlin uses the first child directly
+            // Most languages use a "function" field; Java uses "name"; Kotlin uses the first child
             let func_node = node
                 .child_by_field_name("function")
+                .or_else(|| node.child_by_field_name("name"))
+                .or_else(|| node.child_by_field_name("type"))
                 .or_else(|| node.child(0));
             if let Some(func_node) = func_node {
                 let call_name = func_node.utf8_text(source).unwrap_or("").to_string();
@@ -953,6 +986,7 @@ impl Analyzer for CodeAnalyzer {
                 | ProjectFacet::Cpp
                 | ProjectFacet::CSharp
                 | ProjectFacet::Kotlin
+                | ProjectFacet::Java
         )
     }
 

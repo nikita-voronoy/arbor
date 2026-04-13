@@ -972,6 +972,136 @@ fn kotlin_search() {
 }
 
 // ============================================================
+//  JAVA PROJECT
+// ============================================================
+
+#[test]
+fn java_detect() {
+    let (_, facets) = analyze("java-project");
+    assert!(facets.contains(&ProjectFacet::Java));
+}
+
+#[test]
+fn java_classes() {
+    let (p, _) = analyze("java-project");
+    for name in ["User", "Session", "AuthService", "Main"] {
+        assert!(
+            find_kind(&p, name, NodeKind::Struct).is_some(),
+            "should find Java class: {name}"
+        );
+    }
+}
+
+#[test]
+fn java_interfaces() {
+    let (p, _) = analyze("java-project");
+    assert!(
+        find_kind(&p, "AuthProvider", NodeKind::Trait).is_some(),
+        "should find Java interface as Trait"
+    );
+}
+
+#[test]
+fn java_enums() {
+    let (p, _) = analyze("java-project");
+    assert!(
+        find_kind(&p, "Role", NodeKind::Enum).is_some(),
+        "should find Java enum"
+    );
+    for variant in ["ADMIN", "EDITOR", "VIEWER", "GUEST"] {
+        assert!(
+            find_kind(&p, variant, NodeKind::EnumVariant).is_some(),
+            "should find enum constant: {variant}"
+        );
+    }
+}
+
+#[test]
+fn java_records() {
+    let (p, _) = analyze("java-project");
+    assert!(
+        find_kind(&p, "Credentials", NodeKind::Struct).is_some(),
+        "record Credentials should be indexed as Struct"
+    );
+}
+
+#[test]
+fn java_methods() {
+    let (p, _) = analyze("java-project");
+    for name in [
+        "main",
+        "authenticate",
+        "revoke",
+        "login",
+        "logout",
+        "findUser",
+        "verifyPassword",
+        "getName",
+        "getEmail",
+    ] {
+        assert!(
+            find_fn(&p, name).is_some(),
+            "should find Java method: {name}"
+        );
+    }
+}
+
+#[test]
+fn java_visibility() {
+    let (p, _) = analyze("java-project");
+    let login = find_fn(&p, "login").unwrap();
+    assert_eq!(
+        login.visibility,
+        Visibility::Public,
+        "login should be public"
+    );
+    let find = find_fn(&p, "findUser").unwrap();
+    assert_eq!(
+        find.visibility,
+        Visibility::Private,
+        "findUser should be private"
+    );
+    let verify = find_fn(&p, "verifyPassword").unwrap();
+    assert_eq!(
+        verify.visibility,
+        Visibility::Private,
+        "verifyPassword (protected) should map to Private"
+    );
+}
+
+#[test]
+fn java_signatures() {
+    let (p, _) = analyze("java-project");
+    let login = find_fn(&p, "login").unwrap();
+    let sig = login.signature.as_deref().unwrap();
+    assert!(sig.contains("username"), "sig should contain param: {sig}");
+    assert!(
+        sig.contains("User"),
+        "sig should contain return type: {sig}"
+    );
+}
+
+#[test]
+fn java_call_graph() {
+    let (p, _) = analyze("java-project");
+    let refs = p.references("login");
+    assert!(
+        refs.iter().any(|r| matches!(r.kind, ReferenceKind::Call)),
+        "main should call login"
+    );
+}
+
+#[test]
+fn java_search() {
+    let (p, _) = analyze("java-project");
+    let results = p.search("Auth");
+    assert!(
+        !results.is_empty(),
+        "should find AuthService/AuthProvider by substring"
+    );
+}
+
+// ============================================================
 //  MIXED PROJECT (Rust + Ansible + Docs)
 // ============================================================
 

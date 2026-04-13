@@ -12,6 +12,7 @@ pub enum ProjectFacet {
     Cpp,
     CSharp,
     Kotlin,
+    Java,
     Ansible,
     Terraform,
     Docker,
@@ -32,6 +33,7 @@ impl ProjectFacet {
             Self::Cpp => "cpp",
             Self::CSharp => "csharp",
             Self::Kotlin => "kotlin",
+            Self::Java => "java",
             Self::Ansible => "ansible",
             Self::Terraform => "terraform",
             Self::Docker => "docker",
@@ -86,6 +88,13 @@ pub fn detect(root: &Path) -> Vec<ProjectFacet> {
         || has_extension_in_subdir(&root.join("src"), "kt")
     {
         facets.push(ProjectFacet::Kotlin);
+    }
+    if root.join("pom.xml").exists()
+        || has_extension_in_root(root, "java")
+        || has_extension_in_subdir(root, "java")
+        || has_extension_in_subdir(&root.join("src"), "java")
+    {
+        facets.push(ProjectFacet::Java);
     }
     if has_extension_in_root(root, "sln")
         || has_extension_in_root(root, "csproj")
