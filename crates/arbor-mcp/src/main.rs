@@ -12,6 +12,14 @@ async fn main() -> Result<()> {
 
     let cli_mode = args.iter().any(|a| a == "--cli");
     let compact_mode = args.iter().any(|a| a == "--compact");
+    let languages_mode = args.iter().any(|a| a == "--languages");
+
+    if languages_mode {
+        let analyzer = arbor_analyzers::code::CodeAnalyzer::new();
+        println!("{}", analyzer.language_features_markdown());
+        return Ok(());
+    }
+
     let root = args
         .iter()
         .find(|a| !a.starts_with('-') && *a != &args[0])

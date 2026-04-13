@@ -23,7 +23,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/languages-9-blue?style=flat-square" alt="Languages">
+  <!-- LANGUAGES_BADGE:START --><img src="https://img.shields.io/badge/languages-10-blue?style=flat-square" alt="Languages"><!-- LANGUAGES_BADGE:END -->
   <img src="https://img.shields.io/badge/tree--sitter-powered-green?style=flat-square" alt="tree-sitter">
   <img src="https://img.shields.io/badge/MCP-compatible-purple?style=flat-square" alt="MCP">
   <img src="https://img.shields.io/badge/license-MIT-lightgrey?style=flat-square" alt="License">
@@ -40,7 +40,7 @@
 - **1M lines of code &rarr; 500 lines of context.** arbor builds a symbol graph with tree-sitter and compresses it into token-efficient summaries an LLM can actually use.
 - **9 surgical MCP tools.** The LLM sees architecture first, then drills into exactly what it needs &mdash; no grep noise, no wasted tokens.
 - **Sub-second incremental re-index.** Only changed files are re-analyzed via content hashing. Cold index of a 1M LOC project takes under 10 seconds.
-- **14 languages and formats.** Rust, Python, TypeScript, Go, C/C++, C#, plus Terraform, Ansible, SQL, Protobuf, OpenAPI, and Markdown.
+- **15 languages and formats.** Rust, Python, TypeScript, Go, C/C++, C#, Kotlin, plus Terraform, Ansible, SQL, Protobuf, OpenAPI, and Markdown.
 - **Zero configuration.** One install command. No config files. Works with any project structure.
 
 ```
@@ -140,16 +140,19 @@ arbor's MCP tools return structured, compressed output &mdash; dramatically fewe
 
 ## Supported Languages
 
+<!-- LANGUAGES_TABLE:START -->
 | Language | Functions | Structs | Traits | Enums | Calls | Imports |
 |----------|:---------:|:-------:|:------:|:-----:|:-----:|:-------:|
-| Rust | &#10003; | &#10003; | &#10003; | &#10003; | &#10003; | &#10003; |
-| Python | &#10003; | &#10003; | &mdash; | &mdash; | &#10003; | &#10003; |
-| TypeScript | &#10003; | &#10003; | &#10003; | &#10003; | &#10003; | &#10003; |
-| JavaScript | &#10003; | &#10003; | &mdash; | &mdash; | &#10003; | &#10003; |
-| Go | &#10003; | &#10003; | &mdash; | &mdash; | &#10003; | &#10003; |
-| C | &#10003; | &#10003; | &mdash; | &#10003; | &#10003; | &#10003; |
-| C++ | &#10003; | &#10003; | &mdash; | &#10003; | &#10003; | &#10003; |
-| C# | &#10003; | &#10003; | &#10003; | &#10003; | &#10003; | &#10003; |
+| Rust | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Python | ✓ | ✓ | — | — | ✓ | ✓ |
+| TypeScript | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| JavaScript | ✓ | ✓ | — | — | ✓ | ✓ |
+| Go | ✓ | ✓ | — | — | ✓ | ✓ |
+| C | ✓ | ✓ | — | ✓ | ✓ | ✓ |
+| C++ | ✓ | ✓ | — | ✓ | ✓ | ✓ |
+| C# | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Kotlin | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+<!-- LANGUAGES_TABLE:END -->
 
 <details>
 <summary>Non-code formats</summary>
@@ -177,7 +180,7 @@ graph TB
     end
 
     subgraph arbor-analyzers["arbor-analyzers"]
-        TS["tree-sitter<br>9 languages"]
+        TS["tree-sitter<br>10 languages"]
         IAC["Ansible / Terraform"]
         SCH["SQL / Protobuf / OpenAPI"]
         DOC["Markdown"]

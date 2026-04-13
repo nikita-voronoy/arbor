@@ -249,6 +249,112 @@ impl CodeAnalyzer {
         Self { languages }
     }
 
+    /// Generate a markdown table of supported languages and their features.
+    /// Derived directly from the `NodeQueries` config — always in sync with the code.
+    #[must_use]
+    pub fn language_features_markdown(&self) -> String {
+        let check = "\u{2713}";
+        let dash = "\u{2014}";
+        let display_name = |key: &str| -> String {
+            match key {
+                "rust" => "Rust",
+                "python" => "Python",
+                "typescript" => "TypeScript",
+                "tsx" => "TSX/JSX",
+                "javascript" => "JavaScript",
+                "go" => "Go",
+                "c" => "C",
+                "cpp" => "C++",
+                "csharp" => "C#",
+                "kotlin" => "Kotlin",
+                other => return other.to_string(),
+            }
+            .to_string()
+        };
+        // Stable display order
+        let order = [
+            "rust",
+            "python",
+            "typescript",
+            "javascript",
+            "go",
+            "c",
+            "cpp",
+            "csharp",
+            "kotlin",
+        ];
+        let mut rows = Vec::new();
+        for &key in &order {
+            if let Some(config) = self.languages.get(key) {
+                let q = &config.queries;
+                // For Kotlin: interfaces and enums are handled via class_declaration disambiguation,
+                // so trait_like/enum_def are empty but the features are still supported.
+                let has_traits = !q.trait_like.is_empty() || key == "kotlin";
+                let has_enums = !q.enum_def.is_empty() || !q.enum_variant.is_empty();
+                let row = format!(
+                    "| {} | {} | {} | {} | {} | {} | {} |",
+                    display_name(key),
+                    if q.function.is_empty() { dash } else { check },
+                    if q.struct_like.is_empty() {
+                        dash
+                    } else {
+                        check
+                    },
+                    if has_traits { check } else { dash },
+                    if has_enums { check } else { dash },
+                    if q.call_expr.is_empty() { dash } else { check },
+                    if q.use_decl.is_empty() { dash } else { check },
+                );
+                rows.push(row);
+            }
+        }
+        // Include any languages not in the order list (skip tsx — it's a TypeScript variant)
+        let mut extra: Vec<_> = self
+            .languages
+            .keys()
+            .filter(|k| !order.contains(k) && **k != "tsx")
+            .copied()
+            .collect();
+        extra.sort_unstable();
+        for key in extra {
+            let config = &self.languages[key];
+            let q = &config.queries;
+            let has_traits = !q.trait_like.is_empty();
+            let has_enums = !q.enum_def.is_empty() || !q.enum_variant.is_empty();
+            let row = format!(
+                "| {} | {} | {} | {} | {} | {} | {} |",
+                display_name(key),
+                if q.function.is_empty() { dash } else { check },
+                if q.struct_like.is_empty() {
+                    dash
+                } else {
+                    check
+                },
+                if has_traits { check } else { dash },
+                if has_enums { check } else { dash },
+                if q.call_expr.is_empty() { dash } else { check },
+                if q.use_decl.is_empty() { dash } else { check },
+            );
+            rows.push(row);
+        }
+
+        let mut out = String::from(
+            "| Language | Functions | Structs | Traits | Enums | Calls | Imports |\n\
+             |----------|:---------:|:-------:|:------:|:-----:|:-----:|:-------:|",
+        );
+        for row in rows {
+            out.push('\n');
+            out.push_str(&row);
+        }
+        out
+    }
+
+    /// Number of tree-sitter languages configured (excludes TSX variant).
+    #[must_use]
+    pub fn language_count(&self) -> usize {
+        self.languages.keys().filter(|k| **k != "tsx").count()
+    }
+
     fn language_for_file(&self, path: &Path) -> Option<(&str, &LanguageConfig)> {
         let ext = path.extension()?.to_str()?;
         self.languages
