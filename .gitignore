@@ -1,5 +1,4 @@
 /target
 .arbor/
-.codepalace/
 .DS_Store
 benches/*.py
