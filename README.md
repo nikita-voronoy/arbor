@@ -13,6 +13,7 @@
 <p align="center">
   <a href="#quick-start">Quick Start</a> &bull;
   <a href="#highlights">Why arbor</a> &bull;
+  <a href="#configuration-examples">Configuration</a> &bull;
   <a href="#mcp-tools">Tools</a> &bull;
   <a href="#performance">Performance</a> &bull;
   <a href="#supported-languages">Languages</a>
@@ -85,6 +86,119 @@ That's it. Claude will call `boot` &rarr; `compact` &rarr; `search` &rarr; `refe
 arbor /path/to/project --cli       # Architecture overview
 arbor /path/to/project --compact   # Token-optimized skeleton
 ```
+
+## Configuration Examples
+
+The installer configures everything automatically, but here's what it sets up and how to customize it.
+
+<details>
+<summary><strong>Claude Code (MCP server)</strong></summary>
+
+The installer registers arbor as an MCP server:
+
+```bash
+claude mcp add arbor -- arbor
+```
+
+Verify it's registered:
+
+```bash
+claude mcp list
+```
+
+</details>
+
+<details>
+<summary><strong>PreToolUse hook &mdash; steer Claude toward arbor</strong></summary>
+
+The installer adds a hook to `~/.claude/settings.json` that nudges Claude to use arbor instead of raw grep/glob:
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Grep|Glob",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"additionalContext\":\"STOP: Prefer arbor MCP tools (search, references, skeleton, compact, boot) over Grep/Glob for code navigation. Fall back to Grep/Glob only for string literals, comments, or regex patterns.\"}}'",
+            "statusMessage": "Checking arbor preference..."
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+This doesn't block grep &mdash; it adds context that helps Claude choose the right tool.
+
+</details>
+
+<details>
+<summary><strong>CLAUDE.md instructions</strong></summary>
+
+The installer appends a block to `~/.claude/CLAUDE.md` that teaches Claude when to use each arbor tool:
+
+```markdown
+## Code navigation: use arbor MCP first
+
+- **Instead of grep for a symbol** → use `mcp__arbor__search`
+- **Instead of grep for "who calls X"** → use `mcp__arbor__references`
+- **Instead of reading many files** → use `mcp__arbor__boot`, then `mcp__arbor__skeleton` or `mcp__arbor__compact`
+- **Instead of tracing dependencies** → use `mcp__arbor__dependencies` or `mcp__arbor__impact`
+- **After making changes** → call `mcp__arbor__reindex`
+
+Start every session with `mcp__arbor__boot`.
+```
+
+You can edit `~/.claude/CLAUDE.md` to fine-tune this behavior. For project-specific instructions, add a `CLAUDE.md` in the project root.
+
+</details>
+
+<details>
+<summary><strong>Multi-project workspace</strong></summary>
+
+arbor auto-detects the project root from the working directory. For monorepos with multiple languages, it indexes all detected facets automatically:
+
+```bash
+# Index from repo root — detects Rust + TypeScript + Terraform + Markdown
+arbor /path/to/monorepo --compact
+```
+
+For separate repos that share types, use the `tunnels` tool to discover cross-project connections.
+
+</details>
+
+<details>
+<summary><strong>IDE integration (VS Code / JetBrains)</strong></summary>
+
+arbor works through Claude Code's IDE extensions. After installing arbor:
+
+1. Install the [Claude Code extension](https://marketplace.visualstudio.com/items?itemName=anthropic.claude-code) for your IDE
+2. arbor is automatically available &mdash; Claude will use `boot` and `compact` to understand your project
+
+No additional IDE configuration needed.
+
+</details>
+
+<details>
+<summary><strong>Uninstall</strong></summary>
+
+**macOS / Linux:**
+```bash
+curl -fsSL https://raw.githubusercontent.com/nikita-voronoy/arbor/main/uninstall.sh | bash
+```
+
+**Windows (PowerShell):**
+```powershell
+irm https://raw.githubusercontent.com/nikita-voronoy/arbor/main/uninstall.ps1 | iex
+```
+
+This removes the binary, MCP registration, hooks, and CLAUDE.md instructions.
+
+</details>
 
 ## How It Works
 
