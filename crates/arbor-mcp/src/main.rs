@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use rmcp::ServiceExt;
 use std::path::PathBuf;
 use tokio::io::{stdin, stdout};
@@ -23,7 +23,10 @@ async fn main() -> Result<()> {
     let root = args
         .iter()
         .find(|a| !a.starts_with('-') && *a != &args[0])
-        .map_or_else(|| std::env::current_dir().unwrap(), PathBuf::from);
+        .map_or_else(
+            || std::env::current_dir().context("failed to determine working directory"),
+            |p| Ok(PathBuf::from(p)),
+        )?;
 
     let root = std::fs::canonicalize(&root)?;
 

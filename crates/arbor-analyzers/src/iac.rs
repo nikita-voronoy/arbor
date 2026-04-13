@@ -16,13 +16,12 @@ pub struct AnsibleAnalyzer {
 }
 
 impl AnsibleAnalyzer {
-    /// # Panics
-    /// Panics if the built-in Jinja variable regex is invalid (should never happen).
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
-            jinja_var_re: Regex::new(r"\{\{\s*(\w+)\s*\}\}").unwrap(),
-        }
+    /// # Errors
+    /// Returns an error if regex compilation fails.
+    pub fn new() -> Result<Self> {
+        Ok(Self {
+            jinja_var_re: Regex::new(r"\{\{\s*(\w+)\s*\}\}")?,
+        })
     }
 
     fn analyze_roles(&self, root: &Path, palace: &mut Palace) -> Result<()> {
@@ -355,19 +354,17 @@ pub struct TerraformAnalyzer {
 }
 
 impl TerraformAnalyzer {
-    /// # Panics
-    /// Panics if the built-in Terraform block regex is invalid (should never happen).
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
+    /// # Errors
+    /// Returns an error if regex compilation fails.
+    pub fn new() -> Result<Self> {
+        Ok(Self {
             // Match: resource "type" "name" {, variable "name" {, etc.
             block_re: Regex::new(
                 r#"(?m)^(resource|data|variable|output|module|locals)\s+"([^"]+)"(?:\s+"([^"]+)")?\s*\{"#,
-            )
-            .unwrap(),
+            )?,
             // Match: var.name, module.name.output, data.type.name
-            ref_re: Regex::new(r"\b(var|module|data|local)\.([\w.]+)").unwrap(),
-        }
+            ref_re: Regex::new(r"\b(var|module|data|local)\.([\w.]+)")?,
+        })
     }
 
     fn walk_tf_files(&self, root: &Path) -> Vec<PathBuf> {
@@ -439,7 +436,10 @@ impl TerraformAnalyzer {
                 _ => (NodeKind::Variable, type_or_name.to_string(), None),
             };
 
-            let byte_offset = cap.get(0).unwrap().start();
+            let Some(full_match) = cap.get(0) else {
+                continue;
+            };
+            let byte_offset = full_match.start();
             let line = content[..byte_offset].lines().count() as u32 + 1;
 
             let mut node = Node::new(node_kind, display_name, path, Span::new(line, line, 0, 0))

@@ -71,25 +71,27 @@ pub fn watch(root: &Path) -> Result<(mpsc::Receiver<WatchEvent>, impl Drop)> {
     Ok((rx, debouncer))
 }
 
-/// Check if a path should be ignored (respects .gitignore patterns)
-fn should_ignore(_root: &Path, path: &Path) -> bool {
-    // Quick checks for common ignored patterns
-    let path_str = path.to_string_lossy();
-    if path_str.contains("/.git/")
-        || path_str.contains("/target/")
-        || path_str.contains("/node_modules/")
-        || path_str.contains("/__pycache__/")
-        || path_str.contains("/.arbor/")
-    {
-        return true;
-    }
+const IGNORED_DIRS: &[&str] = &[
+    ".git",
+    "target",
+    "node_modules",
+    "__pycache__",
+    ".arbor",
+    "vendor",
+    "third_party",
+    "testdata",
+];
 
-    // Check if it's a directory
+/// Check if a path should be ignored based on directory components
+fn should_ignore(_root: &Path, path: &Path) -> bool {
     if path.is_dir() {
         return true;
     }
-
-    false
+    path.components().any(|c| {
+        c.as_os_str()
+            .to_str()
+            .is_some_and(|s| IGNORED_DIRS.contains(&s))
+    })
 }
 
 /// Walk the project directory respecting .gitignore

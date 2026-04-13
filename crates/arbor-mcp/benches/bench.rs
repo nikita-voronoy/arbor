@@ -12,7 +12,7 @@ fn fixture(name: &str) -> PathBuf {
 
 fn analyze_fixture(name: &str) -> Palace {
     let mut palace = Palace::new();
-    let registry = AnalyzerRegistry::new();
+    let registry = AnalyzerRegistry::new().unwrap();
     registry
         .analyze_project(&fixture(name), &mut palace)
         .unwrap();
@@ -40,7 +40,7 @@ fn bench_indexing(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::new("analyze", label), &name, |b, &name| {
             b.iter(|| {
                 let mut palace = Palace::new();
-                let registry = AnalyzerRegistry::new();
+                let registry = AnalyzerRegistry::new().unwrap();
                 registry
                     .analyze_project(&fixture(name), &mut palace)
                     .unwrap();
@@ -58,7 +58,7 @@ fn bench_self_indexing(c: &mut Criterion) {
     c.bench_function("indexing/self (arbor ~9kLOC)", |b| {
         b.iter(|| {
             let mut palace = Palace::new();
-            let registry = AnalyzerRegistry::new();
+            let registry = AnalyzerRegistry::new().unwrap();
             registry.analyze_project(&root, &mut palace).unwrap();
             black_box(&palace);
         });
@@ -73,7 +73,7 @@ fn bench_queries(c: &mut Criterion) {
     // Index arbor itself for realistic query benchmarks
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let mut palace = Palace::new();
-    let registry = AnalyzerRegistry::new();
+    let registry = AnalyzerRegistry::new().unwrap();
     registry.analyze_project(&root, &mut palace).unwrap();
 
     let mut group = c.benchmark_group("query");
@@ -186,7 +186,7 @@ fn bench_persistence(c: &mut Criterion) {
     // Larger: self
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let mut big_palace = Palace::new();
-    let registry = AnalyzerRegistry::new();
+    let registry = AnalyzerRegistry::new().unwrap();
     registry.analyze_project(&root, &mut big_palace).unwrap();
 
     group.bench_function("save (self ~9kLOC)", |b| {
@@ -220,7 +220,7 @@ fn bench_incremental(c: &mut Criterion) {
         b.iter_batched(
             || {
                 let mut palace = Palace::new();
-                let registry = AnalyzerRegistry::new();
+                let registry = AnalyzerRegistry::new().unwrap();
                 registry.analyze_project(&root, &mut palace).unwrap();
                 palace
             },
@@ -241,7 +241,7 @@ fn bench_incremental(c: &mut Criterion) {
         b.iter_batched(
             || {
                 let mut palace = Palace::new();
-                let registry = AnalyzerRegistry::new();
+                let registry = AnalyzerRegistry::new().unwrap();
                 registry.analyze_project(&root, &mut palace).unwrap();
                 palace
             },

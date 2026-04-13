@@ -117,19 +117,22 @@ impl Palace {
             return;
         }
 
-        // Pre-collect existing call edges for O(1) dedup
-        let mut added: FxHashSet<(NodeIndex, NodeIndex)> = self
-            .graph
-            .edge_references()
-            .filter(|e| matches!(e.weight(), EdgeKind::Calls))
-            .map(|e| (e.source(), e.target()))
-            .collect();
+        // Dedup only within the pending batch — existing edges from extract_calls
+        // are already deduplicated per function, so we only guard against cross-file dupes.
+        let mut added: FxHashSet<(NodeIndex, NodeIndex)> = FxHashSet::default();
 
         for (caller_idx, callee_name) in pending {
             let targets: Vec<NodeIndex> = self.find_by_name(&callee_name).to_vec();
             for target in targets {
                 if target != caller_idx && added.insert((caller_idx, target)) {
-                    self.graph.add_edge(caller_idx, target, EdgeKind::Calls);
+                    // Check the graph too — extract_calls may have already added this edge
+                    let exists = self
+                        .graph
+                        .edges_connecting(caller_idx, target)
+                        .any(|e| matches!(e.weight(), EdgeKind::Calls));
+                    if !exists {
+                        self.graph.add_edge(caller_idx, target, EdgeKind::Calls);
+                    }
                 }
             }
         }
@@ -223,7 +226,8 @@ impl Palace {
         wing_idx
     }
 
-    /// Auto-discover tunnels between wings by matching symbol names
+    /// Auto-discover tunnels between wings by matching symbol names.
+    /// Safe to call multiple times — clears previous tunnels first.
     pub fn discover_tunnels(&mut self) {
         type WingEntry = (NodeIndex, NodeKind, usize);
 
@@ -239,6 +243,8 @@ impl Palace {
                     | (NodeKind::Table | NodeKind::Struct, NodeKind::Table)
             )
         }
+
+        self.tunnels.clear();
 
         if self.wings.len() < 2 {
             return;

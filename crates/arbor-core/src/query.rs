@@ -128,19 +128,36 @@ impl Palace {
     #[must_use]
     pub fn search(&self, query: &str) -> Vec<NodeIndex> {
         let query_lower = query.to_lowercase();
+        let query_bytes = query_lower.as_bytes();
 
         // Collect unique (name, kind) → best NodeIndex
         let mut seen: FxHashMap<(&str, NodeKind), (NodeIndex, usize)> = FxHashMap::default();
 
         for (name, indices) in &self.name_index {
-            let name_lower = name.to_lowercase();
-            if !name_lower.contains(&query_lower) {
+            // Fast path: skip names shorter than the query
+            if name.len() < query_lower.len() {
+                continue;
+            }
+            // Case-insensitive substring check without allocating
+            let name_bytes = name.as_bytes();
+            let matches = if name_bytes.is_ascii() && query_bytes.is_ascii() {
+                // Fast ASCII path — no allocation
+                name_bytes
+                    .windows(query_bytes.len())
+                    .any(|w| w.eq_ignore_ascii_case(query_bytes))
+            } else {
+                // Unicode fallback — allocates
+                name.to_lowercase().contains(&*query_lower)
+            };
+            if !matches {
                 continue;
             }
 
             let score = if name == query {
                 0
-            } else if name_lower.starts_with(&query_lower) {
+            } else if name.len() >= query_lower.len()
+                && name_bytes[..query_bytes.len()].eq_ignore_ascii_case(query_bytes)
+            {
                 1
             } else {
                 2

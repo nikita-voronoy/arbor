@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 
 use crate::Analyzer;
 
+#[derive(Default)]
 pub struct DocsAnalyzer;
 
 impl DocsAnalyzer {
