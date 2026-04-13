@@ -1,0 +1,7 @@
+#!/bin/sh
+# Fast check — only formatting (<2s)
+
+if ! cargo fmt --all -- --check 2>/dev/null; then
+    echo "❌ cargo fmt failed. Run 'cargo fmt --all' to fix."
+    exit 1
+fi

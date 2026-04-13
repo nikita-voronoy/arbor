@@ -5,6 +5,7 @@
 ```bash
 git clone git@github.com:nikita-voronoy/arbor.git
 cd arbor
+git config core.hooksPath .githooks  # pre-commit: fmt, pre-push: clippy+tests
 cargo test --all
 ```
 

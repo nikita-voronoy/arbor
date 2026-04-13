@@ -1,0 +1,14 @@
+#!/bin/sh
+# Full check before push — clippy + tests
+
+echo "Running clippy..."
+if ! cargo clippy --all -- -D warnings 2>&1; then
+    echo "❌ clippy failed. Fix warnings before pushing."
+    exit 1
+fi
+
+echo "Running tests..."
+if ! cargo test --all --quiet 2>&1; then
+    echo "❌ tests failed."
+    exit 1
+fi
