@@ -19,6 +19,10 @@
 </p>
 
 <p align="center">
+  <a href="https://buymeacoffee.com/nick_voronoy"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-blue.png" alt="Buy Me A Coffee" height="40"></a>
+</p>
+
+<p align="center">
   <img src="https://img.shields.io/badge/languages-9-blue?style=flat-square" alt="Languages">
   <img src="https://img.shields.io/badge/tree--sitter-powered-green?style=flat-square" alt="tree-sitter">
   <img src="https://img.shields.io/badge/MCP-compatible-purple?style=flat-square" alt="MCP">
@@ -211,8 +215,4 @@ MIT &mdash; see [LICENSE](LICENSE).
 
 <p align="center">
   Built with <a href="https://tree-sitter.github.io/">tree-sitter</a> and <a href="https://modelcontextprotocol.io/">MCP</a>
-</p>
-
-<p align="center">
-  <a href="https://buymeacoffee.com/nick_voronoy"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-blue.png" alt="Buy Me A Coffee" height="40"></a>
 </p>
