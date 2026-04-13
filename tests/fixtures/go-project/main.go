@@ -13,6 +13,11 @@ type AuthError struct {
 	Message string
 }
 
+type Authenticator interface {
+	Login(username, password string) (*User, error)
+	Logout(user *User)
+}
+
 func (e *AuthError) Error() string {
 	return fmt.Sprintf("auth error %d: %s", e.Code, e.Message)
 }

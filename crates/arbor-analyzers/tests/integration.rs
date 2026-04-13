@@ -426,6 +426,20 @@ fn python_search() {
     );
 }
 
+#[test]
+fn python_visibility() {
+    let (p, _) = analyze("python-project");
+    // Public classes / functions (no leading underscore)
+    let user = find_kind(&p, "User", NodeKind::Struct).unwrap();
+    assert_eq!(
+        user.visibility,
+        Visibility::Public,
+        "User class should be pub"
+    );
+    let login = find_fn(&p, "login").unwrap();
+    assert_eq!(login.visibility, Visibility::Public, "login should be pub");
+}
+
 // ============================================================
 //  TYPESCRIPT
 // ============================================================
@@ -533,6 +547,53 @@ fn go_search() {
     let (p, _) = analyze("go-project");
     let results = p.search("User");
     assert!(!results.is_empty());
+}
+
+#[test]
+fn go_structs() {
+    let (p, _) = analyze("go-project");
+    assert!(
+        find_kind(&p, "User", NodeKind::Struct).is_some(),
+        "should find Go struct User"
+    );
+    assert!(
+        find_kind(&p, "AuthError", NodeKind::Struct).is_some(),
+        "should find Go struct AuthError"
+    );
+    assert_eq!(count_kind(&p, NodeKind::Struct), 2);
+}
+
+#[test]
+fn go_interfaces() {
+    let (p, _) = analyze("go-project");
+    let auth = find_kind(&p, "Authenticator", NodeKind::Trait);
+    assert!(auth.is_some(), "should find Go interface Authenticator");
+    assert_eq!(count_kind(&p, NodeKind::Trait), 1);
+}
+
+#[test]
+fn go_visibility() {
+    let (p, _) = analyze("go-project");
+    // Exported (uppercase) → Public
+    let user = find_kind(&p, "User", NodeKind::Struct).unwrap();
+    assert_eq!(
+        user.visibility,
+        Visibility::Public,
+        "User should be pub (exported)"
+    );
+    let login = find_fn(&p, "Login").unwrap();
+    assert_eq!(
+        login.visibility,
+        Visibility::Public,
+        "Login should be pub (exported)"
+    );
+    // Unexported (lowercase) → Private
+    let main_fn = find_fn(&p, "main").unwrap();
+    assert_eq!(
+        main_fn.visibility,
+        Visibility::Private,
+        "main should be private (unexported)"
+    );
 }
 
 // ============================================================
@@ -1066,6 +1127,13 @@ fn java_visibility() {
         verify.visibility,
         Visibility::Private,
         "verifyPassword (protected) should map to Private"
+    );
+    // package-private (no modifier) → Crate
+    let session = find_kind(&p, "Session", NodeKind::Struct).unwrap();
+    assert_eq!(
+        session.visibility,
+        Visibility::Crate,
+        "package-private Session should map to Crate"
     );
 }
 

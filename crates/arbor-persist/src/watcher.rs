@@ -80,6 +80,9 @@ fn should_ignore(_root: &Path, path: &Path) -> bool {
         || path_str.contains("/node_modules/")
         || path_str.contains("/__pycache__/")
         || path_str.contains("/.arbor/")
+        || path_str.contains("/vendor/")
+        || path_str.contains("/third_party/")
+        || path_str.contains("/testdata/")
     {
         return true;
     }

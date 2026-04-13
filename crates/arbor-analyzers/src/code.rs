@@ -150,7 +150,8 @@ impl CodeAnalyzer {
                 extensions: &["go"],
                 queries: NodeQueries {
                     function: &["function_declaration", "method_declaration"],
-                    struct_like: &["type_declaration"],
+                    // type_spec (child of type_declaration) holds the name + struct_type/interface_type
+                    struct_like: &["type_spec"],
                     trait_like: &[],
                     impl_block: &[],
                     enum_def: &[],
@@ -390,6 +391,24 @@ impl CodeAnalyzer {
             .git_ignore(true)
             .git_global(true)
             .git_exclude(true)
+            .filter_entry(|entry| {
+                if entry.file_type().is_some_and(|ft| ft.is_dir()) {
+                    let name = entry.file_name().to_string_lossy();
+                    // Skip vendored / generated / dependency directories early
+                    // so we never descend into them
+                    !matches!(
+                        name.as_ref(),
+                        "vendor"
+                            | "third_party"
+                            | "node_modules"
+                            | "testdata"
+                            | "__pycache__"
+                            | ".git"
+                    )
+                } else {
+                    true
+                }
+            })
             .build()
             .filter_map(std::result::Result::ok)
             .filter(|entry| entry.file_type().is_some_and(|ft| ft.is_file()))
@@ -459,41 +478,46 @@ impl CodeAnalyzer {
         } else if kind == "class_declaration" && Self::has_modifier(&ts_node, source, "enum") {
             Some(NodeKind::Enum)
         } else if config.queries.struct_like.contains(&kind) {
-            // C/C++: only index struct/class definitions (with a body), not forward decls or type references
-            // struct foo { ... } → has field_declaration_list or declaration_list → definition
-            // struct foo *bar   → no body → skip (type reference, not definition)
-            // Kotlin: object_declaration is always a definition
-            let is_kotlin_object = kind == "object_declaration";
-            let has_body = is_kotlin_object
-                || ts_node.child_by_field_name("body").is_some()
-                || (0..ts_node.child_count()).any(|i| {
-                    ts_node.child(i).is_some_and(|c| {
-                        let ck = c.kind();
-                        ck == "field_declaration_list"
-                            || ck == "declaration_list"
-                            // Kotlin: class_body, enum_class_body, primary_constructor all indicate a definition
-                            || ck == "class_body"
-                            || ck == "enum_class_body"
-                            || ck == "primary_constructor"
-                    })
-                });
-            if has_body {
+            // Go: type_spec contains struct_type (→ Struct) or interface_type (→ Trait)
+            let has_child_kind = |k: &str| {
+                (0..ts_node.child_count()).any(|i| ts_node.child(i).is_some_and(|c| c.kind() == k))
+            };
+            if has_child_kind("interface_type") {
+                Some(NodeKind::Trait)
+            } else if has_child_kind("struct_type") {
                 Some(NodeKind::Struct)
             } else {
-                // Not a definition — record a TypeRef edge to the real definition
-                let ref_name = Self::extract_name(&ts_node, source);
-                if ref_name != "anonymous" {
-                    let targets = palace.find_by_name(&ref_name).to_vec();
-                    for target_idx in targets {
-                        if let Some(tn) = palace.get_node(target_idx)
-                            && matches!(tn.kind, NodeKind::Struct)
-                        {
-                            palace.add_edge(parent_idx, target_idx, EdgeKind::TypeRef);
-                            break;
+                // C/C++: only index struct/class definitions (with a body), not forward decls or type references
+                // struct foo { ... } → has field_declaration_list or declaration_list → definition
+                // struct foo *bar   → no body → skip (type reference, not definition)
+                // Kotlin: object_declaration is always a definition
+                let is_kotlin_object = kind == "object_declaration";
+                let has_body = is_kotlin_object
+                || ts_node.child_by_field_name("body").is_some()
+                || has_child_kind("field_declaration_list")
+                || has_child_kind("declaration_list")
+                // Kotlin: class_body, enum_class_body, primary_constructor all indicate a definition
+                || has_child_kind("class_body")
+                || has_child_kind("enum_class_body")
+                || has_child_kind("primary_constructor");
+                if has_body {
+                    Some(NodeKind::Struct)
+                } else {
+                    // Not a definition — record a TypeRef edge to the real definition
+                    let ref_name = Self::extract_name(&ts_node, source);
+                    if ref_name != "anonymous" {
+                        let targets = palace.find_by_name(&ref_name).to_vec();
+                        for target_idx in targets {
+                            if let Some(tn) = palace.get_node(target_idx)
+                                && matches!(tn.kind, NodeKind::Struct)
+                            {
+                                palace.add_edge(parent_idx, target_idx, EdgeKind::TypeRef);
+                                break;
+                            }
                         }
                     }
+                    None
                 }
-                None
             }
         } else if config.queries.trait_like.contains(&kind) {
             Some(NodeKind::Trait)
@@ -535,7 +559,7 @@ impl CodeAnalyzer {
         let current_parent = if let Some(nk) = node_kind {
             let name = Self::extract_name(&ts_node, source);
             let sig = Self::extract_signature(&ts_node, source);
-            let vis = Self::extract_visibility(&ts_node, source);
+            let vis = Self::extract_visibility(&ts_node, source, config);
 
             let span = Span::new(
                 ts_node.start_position().row as u32 + 1,
@@ -795,7 +819,11 @@ impl CodeAnalyzer {
         }
     }
 
-    fn extract_visibility(node: &tree_sitter::Node, source: &[u8]) -> Visibility {
+    fn extract_visibility(
+        node: &tree_sitter::Node,
+        source: &[u8],
+        config: &LanguageConfig,
+    ) -> Visibility {
         for i in 0..node.child_count() {
             if let Some(child) = node.child(i) {
                 let ck = child.kind();
@@ -864,33 +892,49 @@ impl CodeAnalyzer {
                 }
             }
         }
-        // C default: non-static functions are public (visible across TUs)
+        // Language-specific defaults (no explicit modifier found)
         let kind = node.kind();
-        if kind == "function_definition" || kind == "struct_specifier" || kind == "enum_specifier" {
+        let is_lang = |ext: &str| config.extensions.contains(&ext);
+
+        // Go: exported = name starts with uppercase letter
+        if is_lang("go") {
+            let name = Self::extract_name(node, source);
+            return if name.starts_with(|c: char| c.is_ascii_uppercase()) {
+                Visibility::Public
+            } else {
+                Visibility::Private
+            };
+        }
+
+        // Python: _name = private, else public (convention)
+        if is_lang("py") {
+            let name = Self::extract_name(node, source);
+            return if name.starts_with('_') {
+                Visibility::Private
+            } else {
+                Visibility::Public
+            };
+        }
+
+        // C/C++ default: non-static functions/types are public (visible across TUs)
+        if kind == "function_definition"
+            || kind == "struct_specifier"
+            || kind == "enum_specifier"
+            || kind == "class_specifier"
+        {
             return Visibility::Public;
         }
+
         // Kotlin default: everything is public unless explicitly marked otherwise
-        if kind == "function_declaration"
-            || kind == "class_declaration"
-            || kind == "object_declaration"
-            || kind == "companion_object"
-            || kind == "property_declaration"
-        {
-            // Only apply this default for Kotlin files — check for "fun" keyword
-            // (Kotlin function_declaration has "fun" child; other langs don't)
-            let is_kotlin = node.children(&mut node.walk()).any(|c| {
-                let ck = c.kind();
-                ck == "fun"
-                    || ck == "class"
-                    || ck == "interface"
-                    || ck == "object"
-                    || ck == "val"
-                    || ck == "var"
-            });
-            if is_kotlin {
-                return Visibility::Public;
-            }
+        if is_lang("kt") || is_lang("kts") {
+            return Visibility::Public;
         }
+
+        // Java default: no modifier = package-private ≈ Crate
+        if is_lang("java") {
+            return Visibility::Crate;
+        }
+
         Visibility::Private
     }
 
