@@ -131,9 +131,9 @@ if (Test-Path $Settings) {
         }
     }
     if (-not $hasHook) {
-        if (-not $config.hooks) { $config | Add-Member -NotePropertyName hooks -NotePropertyValue @{} }
+        if (-not $config.hooks) { $config | Add-Member -NotePropertyName hooks -NotePropertyValue ([PSCustomObject]@{}) }
         if (-not $config.hooks.PreToolUse) { $config.hooks | Add-Member -NotePropertyName PreToolUse -NotePropertyValue @() }
-        $config.hooks.PreToolUse += $HookEntry
+        $config.hooks.PreToolUse = @($config.hooks.PreToolUse) + $HookEntry
         $config | ConvertTo-Json -Depth 10 | Set-Content $Settings -Encoding UTF8
         Write-Host "PreToolUse hook added to $Settings" -ForegroundColor Green
     } else {
