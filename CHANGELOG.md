@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.5](https://github.com/nikita-voronoy/arbor/compare/arbor-v0.1.4...arbor-v0.1.5) (2026-04-13)
+
+
+### Bug Fixes
+
+* improve monorepo detection and skip minified/build artifacts ([#23](https://github.com/nikita-voronoy/arbor/issues/23)) ([829745e](https://github.com/nikita-voronoy/arbor/commit/829745e9d91e69cecfad10e1bb7c7d8b98120aa4))
+* monorepo detection, minified exclusion, CI false-positive ([#26](https://github.com/nikita-voronoy/arbor/issues/26)) ([871d950](https://github.com/nikita-voronoy/arbor/commit/871d9500c3e36fbd9afb8dd53991d42a86e6bd94))
+
 ## [0.1.4](https://github.com/nikita-voronoy/arbor/compare/arbor-v0.1.3...arbor-v0.1.4) (2026-04-13)
 
 
