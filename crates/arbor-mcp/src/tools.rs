@@ -149,6 +149,11 @@ impl ArborServer {
             .unwrap_or("unknown")
     }
 
+    /// Convert an absolute path to a project-relative display string.
+    fn rel_path<'a>(root: &Path, abs: &'a Path) -> &'a Path {
+        abs.strip_prefix(root).unwrap_or(abs)
+    }
+
     /// Read the source code of a symbol using its span info.
     fn read_symbol_source(
         palace: &Palace,
@@ -209,10 +214,15 @@ impl ArborServer {
     }
 
     /// Format a rich summary of a single file.
-    fn format_file_summary(palace: &Palace, path: &Path, indices: &[NodeIndex]) -> String {
+    fn format_file_summary(
+        palace: &Palace,
+        path: &Path,
+        indices: &[NodeIndex],
+        root: &Path,
+    ) -> String {
         use arbor_core::graph::NodeKind;
 
-        let mut out = format!("File: {}\n", path.display());
+        let mut out = format!("File: {}\n", Self::rel_path(root, path).display());
 
         let mut symbols: Vec<_> = indices
             .iter()
@@ -328,8 +338,10 @@ pub struct ImpactParams {
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct SearchParams {
-    /// Search query (substring match)
+    /// Search query (substring match on symbol names, or on signatures if `sig` is true)
     pub query: String,
+    /// Search in signatures instead of names (e.g. find all functions taking `Palace`)
+    pub sig: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -429,7 +441,7 @@ impl ArborServer {
                     "  {} in {} ({}:{})",
                     r.kind,
                     node.name,
-                    node.file.display(),
+                    Self::rel_path(&self.root, &node.file).display(),
                     node.span.start_line
                 );
             }
@@ -482,7 +494,7 @@ impl ArborServer {
                     "  [depth {depth}] {} {} ({}:{})",
                     dep.kind.label(),
                     dep.name,
-                    dep.file.display(),
+                    Self::rel_path(&self.root, &dep.file).display(),
                     dep.span.start_line
                 );
             }
@@ -526,7 +538,7 @@ impl ArborServer {
                     out,
                     "  [depth {depth}] {} ({}:{})",
                     imp.name,
-                    imp.file.display(),
+                    Self::rel_path(&self.root, &imp.file).display(),
                     imp.span.start_line
                 );
             }
@@ -536,10 +548,49 @@ impl ArborServer {
 
     #[tool(
         name = "search",
-        description = "Fuzzy search for symbols (functions, structs, traits, enums) by name substring. Results ranked: exact > prefix > contains."
+        description = "Fuzzy search for symbols by name substring. Set sig=true to search in signatures instead (e.g. find all functions taking `Palace` as a parameter). Results ranked: exact > prefix > contains."
     )]
     async fn search(&self, params: Parameters<SearchParams>) -> String {
+        let search_sig = params.0.sig.unwrap_or(false);
         let palace = self.palace.read();
+
+        if search_sig {
+            let query_lower = params.0.query.to_lowercase();
+            let mut matches: Vec<_> = palace
+                .node_weights()
+                .filter(|n| {
+                    n.signature
+                        .as_ref()
+                        .is_some_and(|sig| sig.to_lowercase().contains(&query_lower))
+                })
+                .collect();
+            matches.sort_by_key(|n| n.span.start_line);
+
+            if matches.is_empty() {
+                return format!("No signatures matching '{}'", params.0.query);
+            }
+
+            let mut out = format!(
+                "Signatures matching '{}' ({} found):\n",
+                params.0.query,
+                matches.len()
+            );
+            for node in matches.iter().take(30) {
+                let sig = node.signature.as_deref().unwrap_or(&node.name);
+                let _ = writeln!(
+                    out,
+                    "  {} {sig} ({}:{})",
+                    node.kind.label(),
+                    Self::rel_path(&self.root, &node.file).display(),
+                    node.span.start_line
+                );
+            }
+            if matches.len() > 30 {
+                let _ = writeln!(out, "  ... and {} more", matches.len() - 30);
+            }
+            return out;
+        }
+
         let results = palace.search(&params.0.query);
         if results.is_empty() {
             return format!("No symbols matching '{}'", params.0.query);
@@ -557,7 +608,7 @@ impl ArborServer {
                 let _ = writeln!(
                     out,
                     "  {kind} {sig} ({}:{})",
-                    node.file.display(),
+                    Self::rel_path(&self.root, &node.file).display(),
                     node.span.start_line
                 );
             }
@@ -610,8 +661,8 @@ impl ArborServer {
                 palace.get_node(r.node).map(|n| {
                     (
                         n.kind.label(),
-                        n.signature.as_deref().unwrap_or(&n.name).to_string(),
-                        n.file.display().to_string(),
+                        n.name.clone(),
+                        Self::rel_path(&self.root, &n.file).display().to_string(),
                         n.span.start_line,
                     )
                 })
@@ -657,7 +708,7 @@ impl ArborServer {
 
         let indices = self.palace.read().nodes_in_file(&path).to_vec();
         let palace = self.palace.read();
-        Self::format_file_summary(&palace, &path, &indices)
+        Self::format_file_summary(&palace, &path, &indices, &self.root)
     }
 
     #[tool(
@@ -729,6 +780,45 @@ impl ArborServer {
         }
         if items.len() > 50 {
             let _ = writeln!(out, "  ... and {} more", items.len() - 50);
+        }
+        out
+    }
+
+    #[tool(
+        name = "implementations",
+        description = "Find all types that implement a given trait. Returns implementor names with file locations."
+    )]
+    async fn implementations(&self, params: Parameters<SymbolParams>) -> String {
+        let refs = self.palace.read().references(&params.0.symbol);
+        let palace = self.palace.read();
+
+        let impls: Vec<_> = refs
+            .iter()
+            .filter(|r| matches!(r.kind, arbor_core::query::ReferenceKind::Implementation))
+            .filter_map(|r| {
+                palace.get_node(r.node).map(|n| {
+                    (
+                        n.kind.label(),
+                        n.name.clone(),
+                        Self::rel_path(&self.root, &n.file).display().to_string(),
+                        n.span.start_line,
+                    )
+                })
+            })
+            .collect();
+        drop(palace);
+
+        if impls.is_empty() {
+            return format!("No implementations found for '{}'", params.0.symbol);
+        }
+
+        let mut out = format!(
+            "Implementations of '{}' ({} found):\n",
+            params.0.symbol,
+            impls.len()
+        );
+        for (kind, name, file, line) in &impls {
+            let _ = writeln!(out, "  {kind} {name} ({file}:{line})");
         }
         out
     }
@@ -875,7 +965,7 @@ mod tests {
         let indices = palace.nodes_in_file(&path);
         assert!(!indices.is_empty(), "palace.rs should have symbols");
 
-        let output = ArborServer::format_file_summary(&palace, &path, indices);
+        let output = ArborServer::format_file_summary(&palace, &path, indices, &root);
 
         assert!(output.contains("Palace"), "should contain Palace struct");
         assert!(output.contains("add_node"), "should contain add_node fn");
