@@ -1,5 +1,43 @@
 # Changelog
 
+## [0.1.6](https://github.com/nikita-voronoy/arbor/compare/arbor-v0.1.5...arbor-v0.1.6) (2026-04-13)
+
+
+### Features
+
+* **mcp:** add `source` tool — show symbol source code with line numbers ([#29](https://github.com/nikita-voronoy/arbor/issues/29))
+* **mcp:** add `callers` tool — find all functions that call a given symbol ([#29](https://github.com/nikita-voronoy/arbor/issues/29))
+* **mcp:** add `summary` tool — rich single-file overview with symbols and call edges ([#29](https://github.com/nikita-voronoy/arbor/issues/29))
+* **mcp:** add `symbols` tool — list all symbols of a given kind with public filter ([#29](https://github.com/nikita-voronoy/arbor/issues/29))
+* **mcp:** add `implementations` tool — find all types implementing a trait ([#29](https://github.com/nikita-voronoy/arbor/issues/29))
+* **mcp:** add signature search (`sig: true` parameter on `search` tool) ([#29](https://github.com/nikita-voronoy/arbor/issues/29))
+* **mcp:** relative paths in all tool output (saves ~40 chars per line) ([#29](https://github.com/nikita-voronoy/arbor/issues/29))
+* **analyzers:** extract `Implements` edges for Rust, Java, C#, Kotlin ([#29](https://github.com/nikita-voronoy/arbor/issues/29))
+
+
+### Bug Fixes
+
+* **analyzers:** impl names show implementing type, not trait name ([#29](https://github.com/nikita-voronoy/arbor/issues/29))
+
+
+### Refactoring
+
+* derive `Copy` for `EdgeKind`, eliminate unnecessary clones ([#29](https://github.com/nikita-voronoy/arbor/issues/29))
+* replace `direction: Option<String>` with `DependencyDirection` enum ([#29](https://github.com/nikita-voronoy/arbor/issues/29))
+* restrict `Palace` fields to `pub(crate)`, add public accessors ([#29](https://github.com/nikita-voronoy/arbor/issues/29))
+* replace wildcard matches on own enums with exhaustive patterns ([#29](https://github.com/nikita-voronoy/arbor/issues/29))
+* extract `walk_files_by_extension` helper to deduplicate analyzers ([#29](https://github.com/nikita-voronoy/arbor/issues/29))
+* replace `anyhow` with `thiserror` in arbor-core ([#29](https://github.com/nikita-voronoy/arbor/issues/29))
+* add `NodeKind::label()`/`short_tag()` + `Display` impl ([#29](https://github.com/nikita-voronoy/arbor/issues/29))
+* decompose `ArborServer::new()` into `full_index` + `incremental_update` ([#29](https://github.com/nikita-voronoy/arbor/issues/29))
+
+
+### Documentation
+
+* update README with 14 MCP tools (was 9) ([#29](https://github.com/nikita-voronoy/arbor/issues/29))
+* add `sync-tools.sh` for auto-generating README tool table from code ([#29](https://github.com/nikita-voronoy/arbor/issues/29))
+* add Code of Conduct and Security Policy ([#27](https://github.com/nikita-voronoy/arbor/issues/27)) ([c394685](https://github.com/nikita-voronoy/arbor/commit/c39468500d7ff6fa94551f2058182f9da2d69124))
+
 ## [0.1.5](https://github.com/nikita-voronoy/arbor/compare/arbor-v0.1.4...arbor-v0.1.5) (2026-04-13)
 
 
