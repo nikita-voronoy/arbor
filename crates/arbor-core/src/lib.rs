@@ -3,6 +3,9 @@ pub mod palace;
 pub mod query;
 pub mod skeleton;
 
+/// Re-export `NodeIndex` so downstream crates don't need petgraph directly.
+pub use petgraph::stable_graph::NodeIndex;
+
 /// Structured error type for arbor-core operations
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

@@ -121,6 +121,20 @@ impl Palace {
             .is_some_and(|n| !matches!(n.kind, NodeKind::File))
     }
 
+    /// Get the names of symbols called by a given node.
+    #[must_use]
+    pub fn callees(&self, idx: NodeIndex) -> Vec<&str> {
+        use petgraph::Direction;
+        use petgraph::visit::EdgeRef;
+
+        self.graph
+            .edges_directed(idx, Direction::Outgoing)
+            .filter(|e| matches!(e.weight(), EdgeKind::Calls))
+            .filter_map(|e| self.get_node(e.target()))
+            .map(|n| n.name.as_str())
+            .collect()
+    }
+
     /// Iterate over all indexed file paths
     pub fn file_paths(&self) -> impl Iterator<Item = &Path> {
         self.file_index.keys().map(PathBuf::as_path)

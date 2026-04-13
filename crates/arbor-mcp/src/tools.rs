@@ -1,4 +1,5 @@
 use arbor_analyzers::AnalyzerRegistry;
+use arbor_core::NodeIndex;
 use arbor_core::palace::Palace;
 use parking_lot::RwLock;
 use rmcp::{
@@ -148,6 +149,111 @@ impl ArborServer {
             .unwrap_or("unknown")
     }
 
+    /// Read the source code of a symbol using its span info.
+    fn read_symbol_source(
+        palace: &Palace,
+        root: &Path,
+        idx: NodeIndex,
+        max_lines: usize,
+    ) -> String {
+        let Some(node) = palace.get_node(idx) else {
+            return "Node not found in graph".to_string();
+        };
+
+        let content = match std::fs::read_to_string(&node.file) {
+            Ok(c) => c,
+            Err(e) => return format!("Failed to read {}: {e}", node.file.display()),
+        };
+
+        let lines: Vec<&str> = content.lines().collect();
+        let start = node.span.start_line.saturating_sub(1) as usize;
+        let end = (node.span.end_line as usize).min(lines.len());
+
+        if start >= lines.len() {
+            return format!(
+                "Span {}:{} is out of range for {} ({} lines)",
+                node.span.start_line,
+                node.span.end_line,
+                node.file.display(),
+                lines.len()
+            );
+        }
+
+        let rel = node.file.strip_prefix(root).unwrap_or(&node.file);
+        let sig = node.signature.as_deref().unwrap_or(&node.name);
+        let mut out = format!(
+            "// {} {} ({}:{}–{})\n",
+            node.kind.label(),
+            sig,
+            rel.display(),
+            node.span.start_line,
+            node.span.end_line
+        );
+
+        let source_lines = &lines[start..end];
+        if source_lines.len() > max_lines {
+            for (i, line) in source_lines.iter().take(max_lines).enumerate() {
+                let _ = writeln!(out, "{:>4} | {line}", start + i + 1);
+            }
+            let _ = writeln!(
+                out,
+                "  ... truncated ({} more lines)",
+                source_lines.len() - max_lines
+            );
+        } else {
+            for (i, line) in source_lines.iter().enumerate() {
+                let _ = writeln!(out, "{:>4} | {line}", start + i + 1);
+            }
+        }
+        out
+    }
+
+    /// Format a rich summary of a single file.
+    fn format_file_summary(palace: &Palace, path: &Path, indices: &[NodeIndex]) -> String {
+        use arbor_core::graph::NodeKind;
+
+        let mut out = format!("File: {}\n", path.display());
+
+        let mut symbols: Vec<_> = indices
+            .iter()
+            .filter_map(|&idx| palace.get_node(idx).map(|n| (idx, n)))
+            .filter(|(_, n)| !matches!(n.kind, NodeKind::File))
+            .collect();
+        symbols.sort_by_key(|(_, n)| n.span.start_line);
+
+        if symbols.is_empty() {
+            out.push_str("  (no symbols found)\n");
+            return out;
+        }
+
+        let _ = writeln!(out, "{} symbols:\n", symbols.len());
+
+        for (idx, node) in &symbols {
+            let vis = if node.visibility == arbor_core::graph::Visibility::Public {
+                "pub "
+            } else {
+                ""
+            };
+            let sig = node.signature.as_deref().unwrap_or(&node.name);
+            let _ = writeln!(
+                out,
+                "  L{:<4} {vis}{} {}",
+                node.span.start_line,
+                node.kind.label(),
+                sig
+            );
+
+            // Show calls from this symbol
+            let mut calls = palace.callees(*idx);
+            if !calls.is_empty() {
+                calls.sort_unstable();
+                calls.dedup();
+                let _ = writeln!(out, "         → calls: [{}]", calls.join(", "));
+            }
+        }
+        out
+    }
+
     /// CLI helpers (not MCP tools)
     pub fn boot_cli(&self) -> String {
         let palace = self.palace.read();
@@ -224,6 +330,28 @@ pub struct ImpactParams {
 pub struct SearchParams {
     /// Search query (substring match)
     pub query: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct SourceParams {
+    /// Symbol name to show source for
+    pub symbol: String,
+    /// Max lines to return (default 100)
+    pub max_lines: Option<usize>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct SummaryParams {
+    /// File path (relative to project root) to summarize
+    pub path: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct SymbolsParams {
+    /// Kind filter: "fn", "struct", "trait", "enum", "macro", or "all" (default "all")
+    pub kind: Option<String>,
+    /// Only show public symbols (default false)
+    pub public_only: Option<bool>,
 }
 
 // --- Tool implementations ---
@@ -436,6 +564,171 @@ impl ArborServer {
         }
         if results.len() > 20 {
             let _ = writeln!(out, "  ... and {} more", results.len() - 20);
+        }
+        out
+    }
+
+    #[tool(
+        name = "source",
+        description = "Show the source code of a symbol (function, struct, trait, etc.) by name. Returns the actual implementation with line numbers. Use this instead of reading whole files when you know the symbol name."
+    )]
+    async fn source(&self, params: Parameters<SourceParams>) -> String {
+        let max_lines = params.0.max_lines.unwrap_or(100);
+
+        let idx = self
+            .palace
+            .read()
+            .find_primary(&params.0.symbol)
+            .or_else(|| {
+                self.palace
+                    .read()
+                    .find_by_name(&params.0.symbol)
+                    .iter()
+                    .copied()
+                    .find(|&i| self.palace.read().is_real_symbol(i))
+            });
+
+        let Some(idx) = idx else {
+            return format!("Symbol '{}' not found", params.0.symbol);
+        };
+        let palace = self.palace.read();
+        Self::read_symbol_source(&palace, &self.root, idx, max_lines)
+    }
+
+    #[tool(
+        name = "callers",
+        description = "Find all functions that call a given symbol. Returns caller names with file locations. Simpler than 'references' when you just need to know who calls what."
+    )]
+    async fn callers(&self, params: Parameters<SymbolParams>) -> String {
+        let refs = self.palace.read().references(&params.0.symbol);
+
+        let palace = self.palace.read();
+        let callers: Vec<_> = refs
+            .iter()
+            .filter(|r| matches!(r.kind, arbor_core::query::ReferenceKind::Call))
+            .filter_map(|r| {
+                palace.get_node(r.node).map(|n| {
+                    (
+                        n.kind.label(),
+                        n.signature.as_deref().unwrap_or(&n.name).to_string(),
+                        n.file.display().to_string(),
+                        n.span.start_line,
+                    )
+                })
+            })
+            .collect();
+        drop(palace);
+
+        if callers.is_empty() {
+            return format!("No callers found for '{}'", params.0.symbol);
+        }
+
+        let mut out = format!(
+            "Callers of '{}' ({} found):\n",
+            params.0.symbol,
+            callers.len()
+        );
+        for (kind, sig, file, line) in &callers {
+            let _ = writeln!(out, "  {kind} {sig} ({file}:{line})");
+        }
+        out
+    }
+
+    #[tool(
+        name = "summary",
+        description = "Get a rich summary of a single file: all symbols with signatures, visibility, and call relationships. More detailed than skeleton for a specific file."
+    )]
+    async fn summary(&self, params: Parameters<SummaryParams>) -> String {
+        let full_path = self.root.join(&params.0.path);
+        let resolved = {
+            let palace = self.palace.read();
+            if palace.nodes_in_file(&full_path).is_empty() {
+                palace
+                    .file_paths()
+                    .find(|p| p.ends_with(&params.0.path))
+                    .map(Path::to_path_buf)
+            } else {
+                Some(full_path)
+            }
+        };
+        let Some(path) = resolved else {
+            return format!("File '{}' not found in index", params.0.path);
+        };
+
+        let indices = self.palace.read().nodes_in_file(&path).to_vec();
+        let palace = self.palace.read();
+        Self::format_file_summary(&palace, &path, &indices)
+    }
+
+    #[tool(
+        name = "symbols",
+        description = "List all symbols of a given kind across the project. Kinds: fn, struct, trait, enum, macro, module, or 'all'. Useful for getting a project-wide view of types, traits, or entry points."
+    )]
+    async fn symbols(&self, params: Parameters<SymbolsParams>) -> String {
+        use arbor_core::graph::NodeKind;
+
+        let palace = self.palace.read();
+        let public_only = params.0.public_only.unwrap_or(false);
+        let kind_filter = params.0.kind.as_deref().unwrap_or("all");
+
+        let target_kinds: Vec<NodeKind> = match kind_filter {
+            "fn" | "function" => vec![NodeKind::Function],
+            "struct" => vec![NodeKind::Struct],
+            "trait" => vec![NodeKind::Trait],
+            "enum" => vec![NodeKind::Enum],
+            "macro" => vec![NodeKind::Macro],
+            "mod" | "module" => vec![NodeKind::Module],
+            "type" => vec![NodeKind::Struct, NodeKind::Enum, NodeKind::Trait],
+            "all" => vec![
+                NodeKind::Function,
+                NodeKind::Struct,
+                NodeKind::Trait,
+                NodeKind::Enum,
+                NodeKind::Macro,
+            ],
+            other => {
+                return format!(
+                    "Unknown kind '{other}'. Use: fn, struct, trait, enum, macro, module, type, all"
+                );
+            }
+        };
+
+        // Collect into owned data so we can drop the lock early
+        let mut items: Vec<(String, String, &'static str, &'static str, u32)> = palace
+            .node_weights()
+            .filter(|n| target_kinds.contains(&n.kind))
+            .filter(|n| !public_only || n.visibility == arbor_core::graph::Visibility::Public)
+            .map(|n| {
+                let rel = n.file.strip_prefix(&self.root).unwrap_or(&n.file);
+                let sig = n.signature.as_deref().unwrap_or(&n.name).to_string();
+                let vis = if n.visibility == arbor_core::graph::Visibility::Public {
+                    "pub "
+                } else {
+                    ""
+                };
+                (
+                    rel.display().to_string(),
+                    sig,
+                    n.kind.label(),
+                    vis,
+                    n.span.start_line,
+                )
+            })
+            .collect();
+        drop(palace);
+
+        items.sort_by(|a, b| a.2.cmp(b.2).then(a.1.cmp(&b.1)));
+
+        if items.is_empty() {
+            return format!("No {kind_filter} symbols found");
+        }
+
+        let mut out = format!("{} {} symbols found:\n", items.len(), kind_filter);
+        for (rel, sig, kind, vis, line) in items.iter().take(50) {
+            let _ = writeln!(out, "  {vis}{kind} {sig} ({rel}:{line})");
+        }
+        if items.len() > 50 {
+            let _ = writeln!(out, "  ... and {} more", items.len() - 50);
         }
         out
     }
