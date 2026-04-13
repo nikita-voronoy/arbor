@@ -20,7 +20,7 @@ pub struct ArborServer {
 
 impl ArborServer {
     pub fn new(root: PathBuf) -> anyhow::Result<Self> {
-        let registry = AnalyzerRegistry::new();
+        let registry = AnalyzerRegistry::new()?;
         let facets = arbor_detect::detect(&root);
         let facet_labels: Vec<String> = facets.iter().map(|f| f.label().to_string()).collect();
 
@@ -297,7 +297,12 @@ impl ArborServer {
             palace.dependencies(node_idx, max_depth)
         };
 
-        let node = palace.get_node(node_idx).unwrap();
+        let Some(node) = palace.get_node(node_idx) else {
+            return format!(
+                "Symbol '{}' found but node missing from graph",
+                params.0.symbol
+            );
+        };
         let dir_label = if incoming {
             "Dependents of"
         } else {
@@ -358,7 +363,12 @@ impl ArborServer {
             })
             .collect();
 
-        let node = palace.get_node(node_idx).unwrap();
+        let Some(node) = palace.get_node(node_idx) else {
+            return format!(
+                "Symbol '{}' found but node missing from graph",
+                params.0.symbol
+            );
+        };
         let mut out = format!(
             "Impact of changing '{}': {} affected symbols\n",
             node.name,
@@ -428,7 +438,10 @@ impl ArborServer {
     async fn reindex(&self) -> String {
         let mut palace = self.palace.write();
         *palace = Palace::new();
-        let registry = AnalyzerRegistry::new();
+        let registry = match AnalyzerRegistry::new() {
+            Ok(r) => r,
+            Err(e) => return format!("Failed to initialize analyzers: {e}"),
+        };
         match registry.analyze_project(&self.root, &mut palace) {
             Ok(facets) => {
                 let _ = arbor_persist::store::save(&palace, &self.root);

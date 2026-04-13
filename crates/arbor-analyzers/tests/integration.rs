@@ -10,7 +10,7 @@ fn analyze(fixture: &str) -> (Palace, Vec<ProjectFacet>) {
         .join("../../tests/fixtures")
         .join(fixture);
     let mut palace = Palace::new();
-    let registry = AnalyzerRegistry::new();
+    let registry = AnalyzerRegistry::new().unwrap();
     let facets = registry.analyze_project(&root, &mut palace).unwrap();
     (palace, facets)
 }

@@ -34,23 +34,24 @@ pub struct AnalyzerRegistry {
 }
 
 impl AnalyzerRegistry {
-    #[must_use]
-    pub fn new() -> Self {
+    /// # Errors
+    /// Returns an error if any analyzer fails to initialize (e.g. invalid regex).
+    pub fn new() -> Result<Self> {
         let mut registry = Self {
             analyzers: Vec::new(),
         };
         registry.analyzers.push(Box::new(code::CodeAnalyzer::new()));
         registry
             .analyzers
-            .push(Box::new(iac::AnsibleAnalyzer::new()));
+            .push(Box::new(iac::AnsibleAnalyzer::new()?));
         registry
             .analyzers
-            .push(Box::new(iac::TerraformAnalyzer::new()));
+            .push(Box::new(iac::TerraformAnalyzer::new()?));
         registry.analyzers.push(Box::new(docs::DocsAnalyzer::new()));
         registry
             .analyzers
-            .push(Box::new(schema::SchemaAnalyzer::new()));
-        registry
+            .push(Box::new(schema::SchemaAnalyzer::new()?));
+        Ok(registry)
     }
 
     /// Get analyzers that can handle a given facet
@@ -84,11 +85,5 @@ impl AnalyzerRegistry {
         }
         palace.resolve_pending_calls();
         Ok(facets)
-    }
-}
-
-impl Default for AnalyzerRegistry {
-    fn default() -> Self {
-        Self::new()
     }
 }

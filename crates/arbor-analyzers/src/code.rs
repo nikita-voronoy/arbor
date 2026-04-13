@@ -1040,21 +1040,24 @@ impl Analyzer for CodeAnalyzer {
         let files = self.walk_files(root);
 
         // Phase 1: read + parse in parallel (I/O + CPU bound)
+        // Store the language key so Phase 2 can look up config without unwrap.
         let parsed: Vec<_> = files
             .par_iter()
             .filter_map(|file| {
                 let source = std::fs::read_to_string(file).ok()?;
-                let (_, config) = self.language_for_file(file)?;
+                let (lang_key, config) = self.language_for_file(file)?;
                 let mut parser = Parser::new();
                 parser.set_language(&config.language).ok()?;
                 let tree = parser.parse(&source, None)?;
-                Some((file.clone(), source, tree))
+                Some((file.clone(), source, tree, lang_key))
             })
             .collect();
 
         // Phase 2: extract nodes sequentially (mutates Palace)
-        for (file, source, tree) in &parsed {
-            let (_, config) = self.language_for_file(file).unwrap();
+        for (file, source, tree, lang_key) in &parsed {
+            let Some((_, config)) = self.languages.get(lang_key).map(|c| (*lang_key, c)) else {
+                continue;
+            };
             self.extract_nodes(tree, source.as_bytes(), file, config, palace);
         }
 

@@ -16,15 +16,14 @@ pub struct SchemaAnalyzer {
 }
 
 impl SchemaAnalyzer {
-    /// # Panics
-    /// Panics if the built-in SQL regexes are invalid (should never happen).
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
-            create_table_re: Regex::new(r"(?i)CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)").unwrap(),
-            column_re: Regex::new(r"(?i)^\s+(\w+)\s+(INTEGER|TEXT|VARCHAR|BOOLEAN|TIMESTAMP|UUID|BIGINT|SERIAL|INT|REAL|FLOAT|DOUBLE|DECIMAL|CHAR|BLOB|DATE|TIME|JSON|JSONB)").unwrap(),
-            fk_re: Regex::new(r"(?i)REFERENCES\s+(\w+)\s*\((\w+)\)").unwrap(),
-        }
+    pub fn new() -> Result<Self> {
+        Ok(Self {
+            create_table_re: Regex::new(r"(?i)CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)")?,
+            column_re: Regex::new(
+                r"(?i)^\s+(\w+)\s+(INTEGER|TEXT|VARCHAR|BOOLEAN|TIMESTAMP|UUID|BIGINT|SERIAL|INT|REAL|FLOAT|DOUBLE|DECIMAL|CHAR|BLOB|DATE|TIME|JSON|JSONB)",
+            )?,
+            fk_re: Regex::new(r"(?i)REFERENCES\s+(\w+)\s*\((\w+)\)")?,
+        })
     }
 
     fn parse_sql(&self, path: &Path, palace: &mut Palace) -> Result<()> {
@@ -176,9 +175,9 @@ impl SchemaAnalyzer {
         );
         let file_idx = palace.add_node(file_node);
 
-        let message_re = Regex::new(r"^\s*message\s+(\w+)").unwrap();
-        let service_re = Regex::new(r"^\s*service\s+(\w+)").unwrap();
-        let rpc_re = Regex::new(r"^\s*rpc\s+(\w+)\s*\((\w+)\)\s*returns\s*\((\w+)\)").unwrap();
+        let message_re = Regex::new(r"^\s*message\s+(\w+)")?;
+        let service_re = Regex::new(r"^\s*service\s+(\w+)")?;
+        let rpc_re = Regex::new(r"^\s*rpc\s+(\w+)\s*\((\w+)\)\s*returns\s*\((\w+)\)")?;
 
         let mut current_parent = file_idx;
 
