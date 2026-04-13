@@ -43,15 +43,18 @@ if (Test-Path $Settings) {
     $modified = $false
 
     if ($config.hooks -and $config.hooks.PreToolUse) {
-        $before = $config.hooks.PreToolUse.Count
-        $config.hooks.PreToolUse = @($config.hooks.PreToolUse | Where-Object { $_.matcher -ne "Grep|Glob" })
-        if ($config.hooks.PreToolUse.Count -lt $before) {
+        $before = @($config.hooks.PreToolUse).Count
+        $filtered = @($config.hooks.PreToolUse | Where-Object { $_.matcher -ne "Grep|Glob" })
+        if ($filtered.Count -lt $before) {
             $modified = $true
-            if ($config.hooks.PreToolUse.Count -eq 0) {
+            if ($filtered.Count -eq 0) {
                 $config.hooks.PSObject.Properties.Remove("PreToolUse")
+            } else {
+                $config.hooks.PreToolUse = $filtered
             }
             # Remove hooks object if empty
-            if (($config.hooks.PSObject.Properties | Measure-Object).Count -eq 0) {
+            $remainingHookProps = @($config.hooks.PSObject.Properties)
+            if ($remainingHookProps.Count -eq 0) {
                 $config.PSObject.Properties.Remove("hooks")
             }
         }

@@ -94,18 +94,22 @@ function Run-Uninstall($FakeHome) {
 
     # settings.json
     if (Test-Path $Settings) {
-        $config = Get-Content $Settings -Raw | ConvertFrom-Json
+        $raw = Get-Content $Settings -Raw
+        $config = $raw | ConvertFrom-Json
         $modified = $false
 
         if ($config.hooks -and $config.hooks.PreToolUse) {
-            $before = $config.hooks.PreToolUse.Count
-            $config.hooks.PreToolUse = @($config.hooks.PreToolUse | Where-Object { $_.matcher -ne "Grep|Glob" })
-            if ($config.hooks.PreToolUse.Count -lt $before) {
+            $before = @($config.hooks.PreToolUse).Count
+            $filtered = @($config.hooks.PreToolUse | Where-Object { $_.matcher -ne "Grep|Glob" })
+            if ($filtered.Count -lt $before) {
                 $modified = $true
-                if ($config.hooks.PreToolUse.Count -eq 0) {
+                if ($filtered.Count -eq 0) {
                     $config.hooks.PSObject.Properties.Remove("PreToolUse")
+                } else {
+                    $config.hooks.PreToolUse = $filtered
                 }
-                if (($config.hooks.PSObject.Properties | Measure-Object).Count -eq 0) {
+                $remainingHookProps = @($config.hooks.PSObject.Properties)
+                if ($remainingHookProps.Count -eq 0) {
                     $config.PSObject.Properties.Remove("hooks")
                 }
             }
@@ -148,7 +152,8 @@ Run-Install $Fake
 Assert-FileExists "$Fake\.claude\settings.json" "settings.json created"
 Assert-FileExists "$Fake\.claude\CLAUDE.md" "CLAUDE.md created"
 $json = Get-Content "$Fake\.claude\settings.json" -Raw | ConvertFrom-Json
-Assert-Eq $json.hooks.PreToolUse[0].matcher "Grep|Glob" "hook matcher correct"
+$ptu = @($json.hooks.PreToolUse)
+Assert-Eq $ptu[0].matcher "Grep|Glob" "hook matcher correct"
 $md = Get-Content "$Fake\.claude\CLAUDE.md" -Raw
 Assert-Contains $md "<!-- arbor:start -->" "CLAUDE.md has start marker"
 Assert-Contains $md "<!-- arbor:end -->" "CLAUDE.md has end marker"
@@ -195,8 +200,9 @@ $json = Get-Content "$Fake\.claude\settings.json" -Raw | ConvertFrom-Json
 Assert-Eq $json.skipDangerousModePermissionPrompt $true "preserves top-level settings"
 Assert-Eq $json.permissions.allow[0] "Bash(git:*)" "preserves permissions"
 Assert-Eq $json.hooks.PreToolUse.Count 2 "two PreToolUse hooks total"
-Assert-Eq $json.hooks.PreToolUse[0].matcher "Bash" "existing Bash hook preserved"
-Assert-Eq $json.hooks.PreToolUse[1].matcher "Grep|Glob" "arbor hook added"
+$ptu = @($json.hooks.PreToolUse)
+Assert-Eq $ptu[0].matcher "Bash" "existing Bash hook preserved"
+Assert-Eq $ptu[1].matcher "Grep|Glob" "arbor hook added"
 Assert-Eq $json.hooks.PostToolUse.Count 1 "PostToolUse hooks preserved"
 
 # ============================================================
@@ -263,7 +269,8 @@ Run-Uninstall $Fake
 $json = Get-Content "$Fake\.claude\settings.json" -Raw | ConvertFrom-Json
 Assert-Eq $json.skipDangerousModePermissionPrompt $true "top-level settings preserved after uninstall"
 Assert-Eq $json.hooks.PreToolUse.Count 1 "only Bash hook remains"
-Assert-Eq $json.hooks.PreToolUse[0].matcher "Bash" "Bash hook preserved"
+$ptu = @($json.hooks.PreToolUse)
+Assert-Eq $ptu[0].matcher "Bash" "Bash hook preserved"
 Assert-Eq $json.hooks.PostToolUse.Count 1 "PostToolUse preserved after uninstall"
 
 $md = Get-Content "$Fake\.claude\CLAUDE.md" -Raw
@@ -329,7 +336,8 @@ New-Item -ItemType Directory -Path "$Fake\.claude" -Force | Out-Null
 
 Run-Install $Fake
 $json = Get-Content "$Fake\.claude\settings.json" -Raw | ConvertFrom-Json
-Assert-Eq $json.hooks.PreToolUse[0].matcher "Grep|Glob" "hook added to empty settings"
+$ptu = @($json.hooks.PreToolUse)
+Assert-Eq $ptu[0].matcher "Grep|Glob" "hook added to empty settings"
 $hasHooks = [bool]($json.PSObject.Properties.Name -contains "hooks")
 Assert-Eq $hasHooks $true "hooks key present"
 
