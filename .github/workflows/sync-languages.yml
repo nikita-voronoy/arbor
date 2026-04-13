@@ -1,0 +1,52 @@
+name: Sync language table
+
+# Regenerate the README language table from code whenever
+# the analyzer or detect crate changes on main.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "crates/arbor-analyzers/src/code.rs"
+      - "crates/arbor-detect/src/markers.rs"
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    name: Update README
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build arbor
+        run: cargo build -p arbor-mcp --release
+
+      - name: Generate language table
+        run: |
+          TABLE=$(target/release/arbor --languages)
+          COUNT=$(echo "$TABLE" | tail -n +3 | wc -l | tr -d ' ')
+
+          # Replace table between markers
+          awk -v table="$TABLE" '
+            /<!-- LANGUAGES_TABLE:START -->/ { print; print table; skip=1; next }
+            /<!-- LANGUAGES_TABLE:END -->/   { skip=0 }
+            !skip { print }
+          ' README.md > README.tmp && mv README.tmp README.md
+
+          # Update badge count
+          sed -i "s|<!-- LANGUAGES_BADGE:START -->.*<!-- LANGUAGES_BADGE:END -->|<!-- LANGUAGES_BADGE:START --><img src=\"https://img.shields.io/badge/languages-${COUNT}-blue?style=flat-square\" alt=\"Languages\"><!-- LANGUAGES_BADGE:END -->|" README.md
+
+      - name: Commit if changed
+        run: |
+          git diff --quiet README.md && exit 0
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          git commit -m "docs: sync language table from code [skip ci]"
+          git push
